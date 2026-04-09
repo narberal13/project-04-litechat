@@ -13,6 +13,7 @@ from app.database import get_db
 from app.services.llm import stream_chat
 from app.services.modes import get_system_prompt, get_modes_list
 from app.services.fallback import needs_fallback, extract_topic_keywords, lookup_with_haiku
+from app.services.haiku_limit import can_use_haiku, increment_haiku_usage
 from app.services.memory import extract_and_save_memories, get_user_context, get_user_memories, delete_user_memory
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -36,7 +37,7 @@ async def send_message(body: SendMessageRequest):
     try:
         now = datetime.now(timezone.utc).isoformat()
 
-        cursor = await db.execute("SELECT id, email, plan, messages_today, messages_today_reset FROM users WHERE id = ?", (body.user_id,))
+        cursor = await db.execute("SELECT id, email, plan, external_ai, messages_today, messages_today_reset FROM users WHERE id = ?", (body.user_id,))
         user = await cursor.fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
@@ -107,15 +108,19 @@ async def send_message(body: SendMessageRequest):
                     full_response += token
                     yield f"data: {token}\n\n"
 
-                # After streaming completes, check fallback BEFORE sending [DONE]
-                if full_response and needs_fallback(full_response):
-                    keywords = extract_topic_keywords(body.message)
-                    haiku_fact = await lookup_with_haiku(keywords)
-                    if haiku_fact:
-                        supplement = f"\n\n（補足: {haiku_fact}）"
-                        for char in supplement:
-                            yield f"data: {char}\n\n"
-                        full_response += supplement
+                # After streaming completes, check fallback ONLY if user opted in + has quota
+                use_external = user["external_ai"] == 1
+                if use_external and full_response and needs_fallback(full_response):
+                    has_quota = await can_use_haiku(body.user_id, user["plan"])
+                    if has_quota:
+                        keywords = extract_topic_keywords(body.message)
+                        haiku_fact = await lookup_with_haiku(keywords)
+                        if haiku_fact:
+                            await increment_haiku_usage(body.user_id)
+                            supplement = f"\n\n（補足: {haiku_fact}）"
+                            for char in supplement:
+                                yield f"data: {char}\n\n"
+                            full_response += supplement
 
                 yield "data: [DONE]\n\n"
             finally:

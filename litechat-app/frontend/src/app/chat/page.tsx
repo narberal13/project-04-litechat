@@ -37,6 +37,9 @@ const DEFAULT_MODES: Mode[] = [
 export default function ChatPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isLogin, setIsLogin] = useState(false);
+  const [authError, setAuthError] = useState("");
   const [plan, setPlan] = useState("free");
   const [chatId, setChatId] = useState<string | null>(null);
   const [chats, setChats] = useState<ChatItem[]>([]);
@@ -67,17 +70,28 @@ export default function ChatPage() {
   const isAdmin = email === "gamma.narberal@gmail.com" ||
     (typeof window !== "undefined" && localStorage.getItem("litechat_user")?.includes("gamma.narberal"));
 
-  const register = async () => {
-    const res = await fetch(`${API_URL}/api/users/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
-    });
-    const data = await res.json();
-    setUserId(data.user_id);
-    setPlan(data.plan);
-    localStorage.setItem("litechat_user", JSON.stringify({ ...data, email }));
-    loadChats(data.user_id);
+  const handleAuth = async () => {
+    setAuthError("");
+    const endpoint = isLogin ? "login" : "register";
+    try {
+      const res = await fetch(`${API_URL}/api/users/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        setAuthError(err.detail || "エラーが発生しました");
+        return;
+      }
+      const data = await res.json();
+      setUserId(data.user_id);
+      setPlan(data.plan);
+      localStorage.setItem("litechat_user", JSON.stringify({ ...data, email }));
+      loadChats(data.user_id);
+    } catch {
+      setAuthError("接続エラー");
+    }
   };
 
   const loadChats = async (uid: string) => {
@@ -197,19 +211,34 @@ export default function ChatPage() {
       <div className={styles.loginContainer}>
         <div className={styles.loginCard}>
           <h1 className={styles.loginTitle}>LiteChat</h1>
-          <p className={styles.loginSub}>月300円のAI相棒</p>
+          <p className={styles.loginSub}>{isLogin ? "ログイン" : "無料で始める"}</p>
           <input
             type="email"
-            placeholder="メールアドレスを入力"
+            placeholder="メールアドレス"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className={styles.loginInput}
-            onKeyDown={(e) => e.key === "Enter" && register()}
           />
-          <button className="btn btn-primary" onClick={register} style={{ width: "100%" }}>
-            無料で始める
+          <input
+            type="password"
+            placeholder="パスワード"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className={styles.loginInput}
+            onKeyDown={(e) => e.key === "Enter" && handleAuth()}
+          />
+          {authError && <p style={{ color: "#ef4444", fontSize: 13, marginBottom: 8 }}>{authError}</p>}
+          <button className="btn btn-primary" onClick={handleAuth} style={{ width: "100%" }}>
+            {isLogin ? "ログイン" : "新規登録（無料）"}
           </button>
-          <p className={styles.loginNote}>1日10メッセージまで無料</p>
+          <p className={styles.loginNote}>
+            <button
+              onClick={() => { setIsLogin(!isLogin); setAuthError(""); }}
+              style={{ background: "none", border: "none", color: "var(--primary)", cursor: "pointer", fontSize: 13 }}
+            >
+              {isLogin ? "アカウントをお持ちでない方 → 新規登録" : "既にアカウントをお持ちの方 → ログイン"}
+            </button>
+          </p>
         </div>
       </div>
     );

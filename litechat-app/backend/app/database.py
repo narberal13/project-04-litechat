@@ -18,7 +18,13 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY,
                 email TEXT UNIQUE NOT NULL,
+                password_hash TEXT,
                 plan TEXT DEFAULT 'free',
+                external_ai INTEGER DEFAULT 0,
+                haiku_used_today INTEGER DEFAULT 0,
+                haiku_used_week INTEGER DEFAULT 0,
+                haiku_reset_daily TEXT,
+                haiku_reset_weekly TEXT,
                 stripe_customer_id TEXT,
                 messages_today INTEGER DEFAULT 0,
                 messages_today_reset TEXT,

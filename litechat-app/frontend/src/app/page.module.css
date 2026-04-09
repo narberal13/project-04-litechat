@@ -10,6 +10,16 @@
 .cta { margin-top: 40px; }
 .ctaNote { color: var(--text-muted); font-size: 12px; margin-top: 12px; }
 
+/* Modes */
+.modes { padding: 60px 20px; max-width: 900px; margin: 0 auto; text-align: center; }
+.modes h2 { font-size: 1.8rem; margin-bottom: 32px; }
+.modeGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.modeItem { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 12px; text-align: center; }
+.modeIcon { font-size: 1.8rem; display: block; margin-bottom: 6px; }
+.modeItem strong { font-size: 13px; }
+.modeItem p { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.privacyNote { text-align: center; font-size: 11px; color: var(--text-muted); margin-top: 24px; max-width: 600px; margin-left: auto; margin-right: auto; }
+
 .compare { padding: 80px 20px; max-width: 900px; margin: 0 auto; text-align: center; }
 .compare h2 { font-size: 1.8rem; margin-bottom: 40px; }
 
