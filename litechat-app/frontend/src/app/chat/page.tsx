@@ -68,6 +68,7 @@ export default function ChatPage() {
   const [newPassword, setNewPassword] = useState("");
   const [settingsMsg, setSettingsMsg] = useState("");
   const [settingsError, setSettingsError] = useState("");
+  const [paymentNotice, setPaymentNotice] = useState("");
 
   // Memory state
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -118,6 +119,22 @@ export default function ChatPage() {
       setEmail(user.email || "");
       loadChats(user.user_id);
       loadUserInfo(user.user_id);
+    }
+
+    // Handle payment redirect
+    const params = new URLSearchParams(window.location.search);
+    const payment = params.get("payment");
+    if (payment === "success") {
+      setPaymentNotice("決済が完了しました。プランがアップグレードされます。");
+      window.history.replaceState({}, "", "/chat");
+      // Reload user info to get updated plan
+      if (saved) {
+        const user = JSON.parse(saved);
+        setTimeout(() => loadUserInfo(user.user_id), 2000);
+      }
+    } else if (payment === "cancel") {
+      setPaymentNotice("決済がキャンセルされました。");
+      window.history.replaceState({}, "", "/chat");
     }
   }, [loadChats, loadUserInfo]);
 
@@ -291,6 +308,26 @@ export default function ChatPage() {
         setMemories((prev) => prev.filter((m) => m.id !== memoryId));
       }
     } catch { /* ignore */ }
+  };
+
+  const openStripePortal = async () => {
+    if (!userId) return;
+    try {
+      const res = await fetch(`${API_URL}/api/stripe/portal`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        setSettingsError(err.detail || "エラーが発生しました");
+        return;
+      }
+      const data = await res.json();
+      window.location.href = data.url;
+    } catch {
+      setSettingsError("接続エラー");
+    }
   };
 
   const openSettings = () => {
@@ -551,6 +588,13 @@ export default function ChatPage() {
           )}
         </div>
 
+        {paymentNotice && (
+          <div className={styles.paymentNotice}>
+            <span>{paymentNotice}</span>
+            <button onClick={() => setPaymentNotice("")}>&times;</button>
+          </div>
+        )}
+
         {/* Mode selection overlay */}
         {showModes && (
           <div className={styles.modeOverlay}>
@@ -599,6 +643,11 @@ export default function ChatPage() {
                       <span className={styles.settingsLabel}>本日の使用量</span>
                       <span className={styles.settingsValue}>{messagesToday} / {freeLimit} メッセージ</span>
                     </div>
+                  )}
+                  {plan !== "free" && (
+                    <button className={styles.settingsActionBtn} onClick={openStripePortal} style={{ marginTop: 8 }}>
+                      サブスクリプション管理
+                    </button>
                   )}
                 </div>
 

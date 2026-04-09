@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
     stripe_price_lite: str = ""
-    stripe_price_plus: str = ""
+    stripe_price_pro: str = ""
 
     discord_webhook_url: str = ""
 

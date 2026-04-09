@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_db
-from app.routers import chat, users, health, admin
+from app.routers import chat, users, health, admin, stripe_pay
 
 
 @asynccontextmanager
@@ -34,3 +34,4 @@ app.include_router(chat.router)
 app.include_router(users.router)
 app.include_router(health.router)
 app.include_router(admin.router)
+app.include_router(stripe_pay.router)

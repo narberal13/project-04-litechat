@@ -1,6 +1,45 @@
+"use client";
+
+import { useState } from "react";
 import styles from "./page.module.css";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 export default function Home() {
+  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
+
+  const handleCheckout = async (plan: "lite" | "pro") => {
+    const saved = localStorage.getItem("litechat_user");
+    if (!saved) {
+      window.location.href = "/chat";
+      return;
+    }
+
+    const user = JSON.parse(saved);
+    setCheckoutLoading(plan);
+
+    try {
+      const res = await fetch(`${API_URL}/api/stripe/checkout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: user.user_id, plan }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.detail || "エラーが発生しました");
+        return;
+      }
+
+      const data = await res.json();
+      window.location.href = data.url;
+    } catch {
+      alert("接続エラーが発生しました");
+    } finally {
+      setCheckoutLoading(null);
+    }
+  };
+
   return (
     <main>
       <section className={styles.hero}>
@@ -94,8 +133,13 @@ export default function Home() {
               <li>チャット履歴7日</li>
               <li>ユーザーメモリ機能</li>
             </ul>
-            <button className="btn btn-primary" style={{ width: "100%", opacity: 0.6, cursor: "not-allowed" }} disabled>
-              準備中
+            <button
+              className="btn btn-primary"
+              style={{ width: "100%" }}
+              onClick={() => handleCheckout("lite")}
+              disabled={checkoutLoading === "lite"}
+            >
+              {checkoutLoading === "lite" ? "処理中..." : "Liteプランに登録"}
             </button>
           </div>
           <div className={styles.pricingCard}>
@@ -107,8 +151,13 @@ export default function Home() {
               <li>チャット履歴30日</li>
               <li>優先レスポンス</li>
             </ul>
-            <button className="btn btn-primary" style={{ width: "100%", opacity: 0.6, cursor: "not-allowed", background: "transparent", border: "1px solid var(--primary)", color: "var(--primary)" }} disabled>
-              準備中
+            <button
+              className="btn btn-primary"
+              style={{ width: "100%", background: "transparent", border: "1px solid var(--primary)", color: "var(--primary)" }}
+              onClick={() => handleCheckout("pro")}
+              disabled={checkoutLoading === "pro"}
+            >
+              {checkoutLoading === "pro" ? "処理中..." : "Proプランに登録"}
             </button>
           </div>
         </div>

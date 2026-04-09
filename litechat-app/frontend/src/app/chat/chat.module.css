@@ -147,6 +147,27 @@
 
 .logoutBtn:hover { border-color: #ef4444; color: #ef4444; }
 
+/* Payment notice */
+.paymentNotice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: #f0fdf4;
+  border-bottom: 1px solid #bbf7d0;
+  color: #166534;
+  font-size: 13px;
+}
+
+.paymentNotice button {
+  background: none;
+  border: none;
+  color: #166534;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
 /* Chat item row with delete */
 .chatItemRow {
   display: flex;
