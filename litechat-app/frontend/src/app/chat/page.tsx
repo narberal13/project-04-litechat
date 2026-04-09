@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import styles from "./chat.module.css";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -21,6 +21,13 @@ interface Mode {
   name: string;
   icon: string;
   description: string;
+}
+
+interface Memory {
+  id: number;
+  fact: string;
+  category: string;
+  created_at: string;
 }
 
 const DEFAULT_MODES: Mode[] = [
@@ -53,8 +60,54 @@ export default function ChatPage() {
   const [showForgot, setShowForgot] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
   const [modes] = useState<Mode[]>(DEFAULT_MODES);
+
+  // Settings panel state
+  const [showSettings, setShowSettings] = useState(false);
+  const [externalAi, setExternalAi] = useState(false);
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [settingsMsg, setSettingsMsg] = useState("");
+  const [settingsError, setSettingsError] = useState("");
+
+  // Memory state
+  const [memories, setMemories] = useState<Memory[]>([]);
+
+  // Rate limit state
+  const [messagesToday, setMessagesToday] = useState(0);
+  const [freeLimit] = useState(10);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const loadChats = useCallback(async (uid: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/chat/list/${uid}`);
+      const data = await res.json();
+      setChats(data.chats);
+    } catch { /* ignore */ }
+  }, []);
+
+  const loadUserInfo = useCallback(async (uid: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/users/${uid}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPlan(data.plan);
+        setExternalAi(!!data.external_ai);
+        setMessagesToday(data.messages_today || 0);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const loadMemories = useCallback(async (uid: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/chat/memory/${uid}`);
+      if (res.ok) {
+        const data = await res.json();
+        setMemories(data.memories);
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem("litechat_user");
@@ -64,8 +117,9 @@ export default function ChatPage() {
       setPlan(user.plan);
       setEmail(user.email || "");
       loadChats(user.user_id);
+      loadUserInfo(user.user_id);
     }
-  }, []);
+  }, [loadChats, loadUserInfo]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -92,8 +146,10 @@ export default function ChatPage() {
       const data = await res.json();
       setUserId(data.user_id);
       setPlan(data.plan);
+      setExternalAi(!!data.external_ai);
       localStorage.setItem("litechat_user", JSON.stringify({ ...data, email }));
       loadChats(data.user_id);
+      loadUserInfo(data.user_id);
     } catch {
       setAuthError("接続エラー");
     }
@@ -133,12 +189,9 @@ export default function ChatPage() {
     setMessages([]);
     setCurrentMode("free");
     setIsLogin(true);
-  };
-
-  const loadChats = async (uid: string) => {
-    const res = await fetch(`${API_URL}/api/chat/list/${uid}`);
-    const data = await res.json();
-    setChats(data.chats);
+    setExternalAi(false);
+    setMemories([]);
+    setMessagesToday(0);
   };
 
   const loadChat = async (cid: string) => {
@@ -167,6 +220,89 @@ export default function ChatPage() {
     setChatId(null);
     setMessages([]);
     inputRef.current?.focus();
+  };
+
+  const deleteChat = async (e: React.MouseEvent, cid: string) => {
+    e.stopPropagation();
+    if (!userId) return;
+    try {
+      const res = await fetch(`${API_URL}/api/chat/${cid}?user_id=${userId}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setChats((prev) => prev.filter((c) => c.id !== cid));
+        if (chatId === cid) {
+          setChatId(null);
+          setMessages([]);
+        }
+      }
+    } catch { /* ignore */ }
+  };
+
+  const toggleExternalAi = async () => {
+    if (!userId) return;
+    const newVal = !externalAi;
+    try {
+      const res = await fetch(`${API_URL}/api/users/${userId}/settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ external_ai: newVal }),
+      });
+      if (res.ok) {
+        setExternalAi(newVal);
+      }
+    } catch { /* ignore */ }
+  };
+
+  const handleChangePassword = async () => {
+    setSettingsMsg("");
+    setSettingsError("");
+    if (!userId) return;
+    if (newPassword.length < 4) {
+      setSettingsError("新しいパスワードは4文字以上にしてください");
+      return;
+    }
+    try {
+      const res = await fetch(`${API_URL}/api/users/${userId}/change-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        setSettingsError(err.detail || "エラーが発生しました");
+        return;
+      }
+      setSettingsMsg("パスワードを変更しました");
+      setOldPassword("");
+      setNewPassword("");
+    } catch {
+      setSettingsError("接続エラー");
+    }
+  };
+
+  const deleteMemory = async (memoryId: number) => {
+    if (!userId) return;
+    try {
+      const res = await fetch(`${API_URL}/api/chat/memory/${userId}/${memoryId}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setMemories((prev) => prev.filter((m) => m.id !== memoryId));
+      }
+    } catch { /* ignore */ }
+  };
+
+  const openSettings = () => {
+    setShowSettings(true);
+    setSettingsMsg("");
+    setSettingsError("");
+    setOldPassword("");
+    setNewPassword("");
+    if (userId) {
+      loadMemories(userId);
+      loadUserInfo(userId);
+    }
   };
 
   const sendMessage = async () => {
@@ -228,6 +364,9 @@ export default function ChatPage() {
         }
       }
 
+      if (plan === "free") {
+        setMessagesToday((prev) => prev + 1);
+      }
       if (userId) loadChats(userId);
     } catch {
       setMessages((prev) => [...prev, { role: "assistant", content: "Connection error." }]);
@@ -245,6 +384,7 @@ export default function ChatPage() {
   };
 
   const currentModeInfo = modes.find((m) => m.id === currentMode) || modes[0];
+  const remainingMessages = Math.max(0, freeLimit - messagesToday);
 
   // Forgot password screen
   if (showForgot) {
@@ -358,27 +498,40 @@ export default function ChatPage() {
           <div className={styles.modeSectionTitle}>履歴</div>
           <div className={styles.chatList}>
             {chats.map((c) => (
-              <button
-                key={c.id}
-                className={`${styles.chatItem} ${c.id === chatId ? styles.chatItemActive : ""}`}
-                onClick={() => loadChat(c.id)}
-              >
-                {c.title}
-              </button>
+              <div key={c.id} className={styles.chatItemRow}>
+                <button
+                  className={`${styles.chatItem} ${c.id === chatId ? styles.chatItemActive : ""}`}
+                  onClick={() => loadChat(c.id)}
+                >
+                  {c.title}
+                </button>
+                <button
+                  className={styles.chatDeleteBtn}
+                  onClick={(e) => deleteChat(e, c.id)}
+                  title="削除"
+                >
+                  &times;
+                </button>
+              </div>
             ))}
           </div>
         </div>
 
         <div className={styles.sidebarFooter}>
           <div>
-            <span className={styles.planBadge}>{plan === "free" ? "Free" : plan}</span>
+            <span className={styles.planBadge}>{plan === "free" ? "Free" : plan === "lite" ? "Lite" : "Pro"}</span>
             {isAdmin && (
               <a href="/admin" className={styles.adminLink}>Admin Dashboard</a>
             )}
           </div>
-          <button className={styles.logoutBtn} onClick={handleLogout}>
-            ログアウト
-          </button>
+          <div className={styles.footerButtons}>
+            <button className={styles.settingsBtn} onClick={openSettings} title="設定">
+              &#9881;
+            </button>
+            <button className={styles.logoutBtn} onClick={handleLogout}>
+              ログアウト
+            </button>
+          </div>
         </div>
       </div>
 
@@ -391,6 +544,11 @@ export default function ChatPage() {
           <span className={styles.topMode}>
             {currentModeInfo.icon} {currentModeInfo.name}
           </span>
+          {plan === "free" && !isAdmin && (
+            <span className={styles.rateLimit}>
+              残り {remainingMessages}/{freeLimit} 通/日
+            </span>
+          )}
         </div>
 
         {/* Mode selection overlay */}
@@ -405,6 +563,117 @@ export default function ChatPage() {
                   <div className={styles.modeCardDesc}>{m.description}</div>
                 </button>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Settings overlay */}
+        {showSettings && (
+          <div className={styles.settingsOverlay}>
+            <div className={styles.settingsPanel}>
+              <div className={styles.settingsHeader}>
+                <h2>設定</h2>
+                <button className={styles.settingsClose} onClick={() => setShowSettings(false)}>
+                  &times;
+                </button>
+              </div>
+
+              <div className={styles.settingsBody}>
+                {/* Account info */}
+                <div className={styles.settingsSection}>
+                  <h3>アカウント</h3>
+                  <div className={styles.settingsRow}>
+                    <span className={styles.settingsLabel}>メール</span>
+                    <span className={styles.settingsValue}>{email}</span>
+                  </div>
+                  <div className={styles.settingsRow}>
+                    <span className={styles.settingsLabel}>プラン</span>
+                    <span className={styles.settingsValue}>
+                      <span className={styles.planBadge}>
+                        {plan === "free" ? "Free" : plan === "lite" ? "Lite" : "Pro"}
+                      </span>
+                    </span>
+                  </div>
+                  {plan === "free" && !isAdmin && (
+                    <div className={styles.settingsRow}>
+                      <span className={styles.settingsLabel}>本日の使用量</span>
+                      <span className={styles.settingsValue}>{messagesToday} / {freeLimit} メッセージ</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* External AI toggle */}
+                <div className={styles.settingsSection}>
+                  <h3>高精度AI補助（Claude Haiku）</h3>
+                  <p className={styles.settingsDesc}>
+                    ローカルAIが回答できない場合、キーワードのみを外部AIに送信して補足情報を取得します。
+                    個人情報は送信されません。
+                  </p>
+                  <div className={styles.toggleRow}>
+                    <span>外部AI補助を有効にする</span>
+                    <button
+                      className={`${styles.toggle} ${externalAi ? styles.toggleOn : ""}`}
+                      onClick={toggleExternalAi}
+                    >
+                      <span className={styles.toggleKnob} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Password change */}
+                <div className={styles.settingsSection}>
+                  <h3>パスワード変更</h3>
+                  {settingsMsg && <p className={styles.successMsg}>{settingsMsg}</p>}
+                  {settingsError && <p className={styles.errorMsg}>{settingsError}</p>}
+                  <input
+                    type="password"
+                    placeholder="現在のパスワード"
+                    value={oldPassword}
+                    onChange={(e) => setOldPassword(e.target.value)}
+                    className={styles.settingsInput}
+                  />
+                  <input
+                    type="password"
+                    placeholder="新しいパスワード（4文字以上）"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className={styles.settingsInput}
+                    onKeyDown={(e) => e.key === "Enter" && handleChangePassword()}
+                  />
+                  <button className={styles.settingsActionBtn} onClick={handleChangePassword}>
+                    パスワードを変更
+                  </button>
+                </div>
+
+                {/* Memory management */}
+                <div className={styles.settingsSection}>
+                  <h3>AIが記憶した情報</h3>
+                  <p className={styles.settingsDesc}>
+                    会話から自動的に抽出された情報です。不要なものは削除できます。
+                  </p>
+                  {memories.length === 0 ? (
+                    <p className={styles.settingsEmpty}>記憶された情報はまだありません</p>
+                  ) : (
+                    <div className={styles.memoryList}>
+                      {memories.map((m) => (
+                        <div key={m.id} className={styles.memoryItem}>
+                          <div className={styles.memoryContent}>
+                            <span className={styles.memoryCategory}>{m.category}</span>
+                            <span>{m.fact}</span>
+                          </div>
+                          <button
+                            className={styles.memoryDeleteBtn}
+                            onClick={() => deleteMemory(m.id)}
+                            title="削除"
+                          >
+                            &times;
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         )}

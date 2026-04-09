@@ -147,6 +147,286 @@
 
 .logoutBtn:hover { border-color: #ef4444; color: #ef4444; }
 
+/* Chat item row with delete */
+.chatItemRow {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.chatItemRow .chatItem {
+  flex: 1;
+  min-width: 0;
+}
+
+.chatDeleteBtn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  opacity: 0;
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+}
+
+.chatItemRow:hover .chatDeleteBtn { opacity: 1; }
+.chatDeleteBtn:hover { color: #ef4444; background: rgba(239,68,68,0.08); }
+
+/* Rate limit badge */
+.rateLimit {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg);
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+/* Footer buttons */
+.footerButtons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settingsBtn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.settingsBtn:hover { border-color: var(--primary); color: var(--primary); }
+
+/* Settings overlay */
+.settingsOverlay {
+  position: absolute; inset: 0; z-index: 20;
+  background: rgba(0,0,0,0.3);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+
+.settingsPanel {
+  background: var(--surface);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+}
+
+.settingsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settingsHeader h2 { font-size: 18px; margin: 0; }
+
+.settingsClose {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.settingsClose:hover { color: var(--text); }
+
+.settingsBody {
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.settingsSection {
+  margin-bottom: 28px;
+}
+
+.settingsSection:last-child { margin-bottom: 0; }
+
+.settingsSection h3 {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: var(--text);
+}
+
+.settingsDesc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  line-height: 1.6;
+}
+
+.settingsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.settingsLabel {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.settingsValue {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.settingsInput {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 14px;
+  margin-bottom: 8px;
+  outline: none;
+}
+
+.settingsInput:focus { border-color: var(--primary); }
+
+.settingsActionBtn {
+  padding: 8px 20px;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  margin-top: 4px;
+}
+
+.settingsActionBtn:hover { opacity: 0.9; }
+
+.errorMsg {
+  color: #ef4444;
+  font-size: 13px;
+  margin-bottom: 8px;
+  background: #fef2f2;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.settingsEmpty {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Toggle switch */
+.toggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.toggle {
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  background: var(--border);
+  border: none;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.toggleOn { background: var(--primary); }
+
+.toggleKnob {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: white;
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  transition: left 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+}
+
+.toggleOn .toggleKnob { left: 23px; }
+
+/* Memory list */
+.memoryList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.memoryItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg);
+  border-radius: 8px;
+  font-size: 13px;
+  gap: 8px;
+}
+
+.memoryContent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.memoryContent > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memoryCategory {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--primary);
+  color: white;
+  font-weight: 600;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+.memoryDeleteBtn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 18px;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+
+.memoryDeleteBtn:hover { color: #ef4444; }
+
 /* Mode overlay */
 .modeOverlay {
   position: absolute; inset: 0; z-index: 10;
@@ -326,4 +606,9 @@
   .messageContent { max-width: 85%; }
 
   .modeGrid { grid-template-columns: repeat(2, 1fr); }
+
+  .settingsPanel { max-width: 100%; max-height: 95vh; }
+  .settingsOverlay { padding: 10px; }
+  .chatDeleteBtn { opacity: 1; }
+  .rateLimit { font-size: 10px; padding: 2px 8px; }
 }

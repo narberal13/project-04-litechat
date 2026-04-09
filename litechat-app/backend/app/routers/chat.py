@@ -178,6 +178,25 @@ async def list_chats(user_id: str):
         await db.close()
 
 
+@router.delete("/{chat_id}")
+async def delete_chat(chat_id: str, user_id: str):
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT user_id FROM chats WHERE id = ?", (chat_id,))
+        chat = await cursor.fetchone()
+        if not chat:
+            raise HTTPException(status_code=404, detail="Chat not found")
+        if chat["user_id"] != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized")
+
+        await db.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
+        await db.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
+        await db.commit()
+        return {"status": "deleted"}
+    finally:
+        await db.close()
+
+
 @router.get("/memory/{user_id}")
 async def get_memories(user_id: str):
     memories = await get_user_memories(user_id)
