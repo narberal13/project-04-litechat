@@ -13,7 +13,7 @@ export default function LegalPage() {
       >
         <tbody>
           {[
-            ["販売事業者", "【氏名を記載してください】"],
+            ["販売事業者", "ToolLab"],
             [
               "所在地",
               "請求があった場合、遅滞なく開示いたします。",
@@ -22,7 +22,7 @@ export default function LegalPage() {
               "電話番号",
               "請求があった場合、遅滞なく開示いたします。",
             ],
-            ["メールアドレス", "support@pik-tal.com"],
+            ["メールアドレス", "toollab13@gmail.com"],
             ["販売URL", "https://pik-tal.com"],
             [
               "販売価格",
