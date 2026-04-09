@@ -1,88 +1,65 @@
-"""DevOps Agent — サーバー監視・障害アラート。
+"""DevOps Agent — Haiku API疎通確認・障害アラート。
 
-5分間隔でllama.cpp + FastAPIのヘルスチェック。
-異常検知時にDiscordアラート送信。
+5分間隔でAnthropic API + FastAPIのヘルスチェック。
 """
 
 import httpx
 from datetime import datetime, timezone
 
-from app.config import settings
+from app.services.llm import health_check as api_health_check
 from app.agents.discord import send_discord
 
-# 連続障害カウンター（メモリ内保持）
 _fail_count = 0
-_MAX_SILENT = 3  # 3回連続失敗で初回アラート、以降は10回ごと
+_MAX_SILENT = 3
 
 
 async def check_health():
-    """llama.cppとFastAPIのヘルスチェック。"""
+    """Anthropic APIとFastAPIの疎通確認。"""
     global _fail_count
 
-    llm_ok = False
+    haiku_ok = await api_health_check()
     api_ok = False
 
     try:
         async with httpx.AsyncClient(timeout=5) as client:
-            # llama.cpp
-            try:
-                r = await client.get(f"{settings.llama_server_url}/health")
-                llm_ok = r.status_code == 200
-            except Exception:
-                llm_ok = False
-
-            # FastAPI self-check (DB access)
-            try:
-                r = await client.get("http://127.0.0.1:8000/api/health")
-                data = r.json()
-                api_ok = data.get("status") in ("ok", "degraded")
-            except Exception:
-                api_ok = True  # 自分自身のチェックなので起動中なら到達している
-
+            r = await client.get("http://127.0.0.1:8000/api/health")
+            data = r.json()
+            api_ok = data.get("status") in ("ok", "degraded")
     except Exception:
-        pass
+        api_ok = True
 
-    now_jst = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-    if llm_ok and api_ok:
+    if haiku_ok and api_ok:
         if _fail_count > 0:
             await send_discord(
-                f"[DevOps] 復旧確認 ({now_jst})\nLLM: OK / API: OK\n"
+                f"[DevOps] 復旧確認 ({now_str})\nHaiku API: OK / API: OK\n"
                 f"（{_fail_count}回の障害から復旧）",
                 username="DevOps Agent",
             )
             _fail_count = 0
         return
 
-    # 障害検知
     _fail_count += 1
     parts = []
-    if not llm_ok:
-        parts.append("LLM (llama.cpp): DOWN")
+    if not haiku_ok:
+        parts.append("Haiku API: DOWN")
     if not api_ok:
-        parts.append("API (FastAPI): DOWN")
+        parts.append("FastAPI: DOWN")
 
     status = " / ".join(parts)
 
-    # 初回 or 10回ごとにアラート（スパム防止）
     if _fail_count == _MAX_SILENT or _fail_count % 10 == 0:
         await send_discord(
-            f"[DevOps] 障害検知 ({now_jst})\n{status}\n連続失敗: {_fail_count}回",
+            f"[DevOps] 障害検知 ({now_str})\n{status}\n連続失敗: {_fail_count}回",
             username="DevOps Agent",
         )
 
 
 async def daily_server_report() -> dict:
-    """日次サーバーステータスを返す（CEO Agentが使用）。"""
-    llm_ok = False
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            r = await client.get(f"{settings.llama_server_url}/health")
-            llm_ok = r.status_code == 200
-    except Exception:
-        pass
-
+    """日次サーバーステータス（CEO Agent用）。"""
+    haiku_ok = await api_health_check()
     return {
-        "llm_status": "online" if llm_ok else "offline",
+        "api_status": "online" if haiku_ok else "offline",
         "consecutive_failures": _fail_count,
     }

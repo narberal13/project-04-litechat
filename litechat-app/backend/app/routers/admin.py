@@ -1,12 +1,10 @@
-"""Admin API — dashboard and management."""
+"""きくよ Admin API — ダッシュボード。"""
 
 import hashlib
-import secrets
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from pydantic import BaseModel
 
 from app.database import get_db
 from app.agents.ceo import daily_summary
@@ -14,7 +12,6 @@ from app.agents.ceo import daily_summary
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 security = HTTPBasic()
 
-# Admin credentials (hashed)
 ADMIN_EMAIL = "gamma.narberal@gmail.com"
 ADMIN_PASSWORD_HASH = hashlib.sha256("LiteChat@Admin2026!".encode()).hexdigest()
 
@@ -35,7 +32,7 @@ async def dashboard(admin: str = Depends(verify_admin)):
         cursor = await db.execute("SELECT COUNT(*) as cnt FROM users")
         total_users = (await cursor.fetchone())["cnt"]
 
-        cursor = await db.execute("SELECT COUNT(*) as cnt FROM users WHERE plan != 'free'")
+        cursor = await db.execute("SELECT COUNT(*) as cnt FROM users WHERE plan = 'mainichi'")
         paid_users = (await cursor.fetchone())["cnt"]
 
         cursor = await db.execute(
@@ -49,7 +46,9 @@ async def dashboard(admin: str = Depends(verify_admin)):
         cursor = await db.execute("SELECT COUNT(*) as cnt FROM chats")
         total_chats = (await cursor.fetchone())["cnt"]
 
-        # Messages per day (last 7 days)
+        cursor = await db.execute("SELECT COUNT(*) as cnt FROM mood_logs WHERE DATE(created_at) = ?", (today,))
+        moods_today = (await cursor.fetchone())["cnt"]
+
         cursor = await db.execute("""
             SELECT DATE(created_at) as date, COUNT(*) as cnt
             FROM messages
@@ -58,9 +57,8 @@ async def dashboard(admin: str = Depends(verify_admin)):
         """)
         daily_messages = [dict(r) for r in await cursor.fetchall()]
 
-        # Recent users
         cursor = await db.execute(
-            "SELECT id, email, plan, messages_today, created_at FROM users ORDER BY created_at DESC LIMIT 20"
+            "SELECT id, email, plan, nickname, messages_today, messages_week, created_at FROM users ORDER BY created_at DESC LIMIT 20"
         )
         recent_users = [dict(r) for r in await cursor.fetchall()]
 
@@ -70,6 +68,7 @@ async def dashboard(admin: str = Depends(verify_admin)):
             "messages_today": messages_today,
             "total_messages": total_messages,
             "total_chats": total_chats,
+            "moods_today": moods_today,
             "daily_messages": daily_messages,
             "recent_users": recent_users,
         }
@@ -79,7 +78,6 @@ async def dashboard(admin: str = Depends(verify_admin)):
 
 @router.post("/report")
 async def trigger_report(admin: str = Depends(verify_admin)):
-    """手動で日次レポートをDiscordに送信。"""
     await daily_summary()
     return {"status": "report_sent"}
 
@@ -89,7 +87,7 @@ async def list_users(admin: str = Depends(verify_admin)):
     db = await get_db()
     try:
         cursor = await db.execute(
-            "SELECT id, email, plan, messages_today, created_at FROM users ORDER BY created_at DESC"
+            "SELECT id, email, plan, nickname, messages_today, messages_week, created_at FROM users ORDER BY created_at DESC"
         )
         return [dict(r) for r in await cursor.fetchall()]
     finally:

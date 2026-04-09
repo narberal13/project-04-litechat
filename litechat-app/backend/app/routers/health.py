@@ -1,21 +1,21 @@
-"""Health check and stats."""
+"""きくよ — ヘルスチェック & 統計。"""
 
 from datetime import datetime, timezone
 
 from fastapi import APIRouter
 
 from app.database import get_db
-from app.services.llm import health_check as llm_health
+from app.services.llm import health_check as api_health
 
 router = APIRouter(prefix="/api", tags=["health"])
 
 
 @router.get("/health")
 async def health():
-    llm_ok = await llm_health()
+    api_ok = await api_health()
     return {
-        "status": "ok" if llm_ok else "degraded",
-        "llm": "ok" if llm_ok else "offline",
+        "status": "ok" if api_ok else "degraded",
+        "api": "ok" if api_ok else "offline",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 

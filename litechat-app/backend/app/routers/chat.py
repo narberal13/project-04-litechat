@@ -1,8 +1,7 @@
-"""Chat API — handles message sending with SSE streaming."""
+"""きくよ Chat API — 傾聴AI、気分記録、週次振り返り。"""
 
-import asyncio
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -11,24 +10,24 @@ from pydantic import BaseModel
 from app.config import settings
 from app.database import get_db
 from app.services.llm import stream_chat
-from app.services.modes import get_system_prompt, get_modes_list
-from app.services.fallback import needs_fallback, extract_topic_keywords, lookup_with_haiku
-from app.services.haiku_limit import can_use_haiku, increment_haiku_usage
-from app.services.memory import extract_and_save_memories, get_user_context, get_user_memories, delete_user_memory
+from app.services.prompt import build_system_prompt, detect_crisis, CRISIS_RESPONSE
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+
+JST = timezone(timedelta(hours=9))
 
 
 class SendMessageRequest(BaseModel):
     chat_id: str | None = None
     message: str
     user_id: str
-    mode: str = "free"
 
 
-@router.get("/modes")
-async def list_modes():
-    return get_modes_list()
+class MoodLogRequest(BaseModel):
+    user_id: str
+    score: int  # 1-5
+    note: str = ""
+    tags: str = ""
 
 
 @router.post("/send")
@@ -37,17 +36,23 @@ async def send_message(body: SendMessageRequest):
     try:
         now = datetime.now(timezone.utc).isoformat()
 
-        cursor = await db.execute("SELECT id, email, plan, external_ai, messages_today, messages_today_reset FROM users WHERE id = ?", (body.user_id,))
+        cursor = await db.execute(
+            "SELECT id, email, plan, nickname, custom_personality, "
+            "messages_today, messages_today_reset, messages_week, messages_week_reset "
+            "FROM users WHERE id = ?",
+            (body.user_id,),
+        )
         user = await cursor.fetchone()
         if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail="ユーザーが見つかりません")
 
-        # Skip rate limit for admin
         is_admin = user["email"] == "gamma.narberal@gmail.com"
 
-        # Rate limit for free users (admin bypasses)
+        # --- レート制限 ---
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
         if user["plan"] == "free" and not is_admin:
-            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            # 無料: 3回/日
             if user["messages_today_reset"] != today:
                 await db.execute(
                     "UPDATE users SET messages_today = 0, messages_today_reset = ? WHERE id = ?",
@@ -60,34 +65,100 @@ async def send_message(body: SendMessageRequest):
             if user["messages_today"] >= settings.free_messages_per_day:
                 raise HTTPException(
                     status_code=429,
-                    detail=f"Free plan limit reached ({settings.free_messages_per_day}/day). Upgrade to Lite for unlimited.",
+                    detail=f"今日の無料回数（{settings.free_messages_per_day}回）に達しました。「まいにちプラン」で週70回まで使えます。",
+                )
+        elif user["plan"] == "mainichi" and not is_admin:
+            # まいにち: 70回/週
+            now_jst = datetime.now(JST)
+            week_start = (now_jst - timedelta(days=now_jst.weekday())).strftime("%Y-%m-%d")
+
+            if user["messages_week_reset"] != week_start:
+                await db.execute(
+                    "UPDATE users SET messages_week = 0, messages_week_reset = ? WHERE id = ?",
+                    (week_start, body.user_id),
+                )
+                await db.commit()
+                cursor = await db.execute("SELECT * FROM users WHERE id = ?", (body.user_id,))
+                user = await cursor.fetchone()
+
+            if user["messages_week"] >= settings.paid_messages_per_week:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"今週の利用回数（{settings.paid_messages_per_week}回）に達しました。来週月曜にリセットされます。",
                 )
 
-        # Create or get chat
+        # --- 危機検知 ---
+        if detect_crisis(body.message):
+            # 危機メッセージ: 即座に緊急連絡先を返す
+            chat_id = body.chat_id or str(uuid.uuid4())
+            if not body.chat_id:
+                await db.execute(
+                    "INSERT INTO chats (id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                    (chat_id, body.user_id, "相談", now, now),
+                )
+            await db.execute(
+                "INSERT INTO messages (chat_id, role, content, created_at) VALUES (?, 'user', ?, ?)",
+                (chat_id, body.message, now),
+            )
+            await db.execute(
+                "INSERT INTO messages (chat_id, role, content, created_at) VALUES (?, 'assistant', ?, ?)",
+                (chat_id, CRISIS_RESPONSE, now),
+            )
+            # カウント増加
+            if user["plan"] == "free":
+                await db.execute(
+                    "UPDATE users SET messages_today = messages_today + 1 WHERE id = ?",
+                    (body.user_id,),
+                )
+            elif user["plan"] == "mainichi":
+                await db.execute(
+                    "UPDATE users SET messages_week = messages_week + 1 WHERE id = ?",
+                    (body.user_id,),
+                )
+            await db.commit()
+
+            async def crisis_stream():
+                for char in CRISIS_RESPONSE:
+                    yield f"data: {char}\n\n"
+                yield "data: [DONE]\n\n"
+
+            return StreamingResponse(
+                crisis_stream(),
+                media_type="text/event-stream",
+                headers={"X-Chat-Id": chat_id, "Cache-Control": "no-cache"},
+            )
+
+        # --- チャット作成 or 取得 ---
         chat_id = body.chat_id
         if not chat_id:
             chat_id = str(uuid.uuid4())
-            title = body.message[:30] + ("..." if len(body.message) > 30 else "")
+            title = body.message[:20] + ("..." if len(body.message) > 20 else "")
             await db.execute(
                 "INSERT INTO chats (id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
                 (chat_id, body.user_id, title, now, now),
             )
 
-        # Save user message
+        # ユーザーメッセージ保存
         await db.execute(
             "INSERT INTO messages (chat_id, role, content, created_at) VALUES (?, 'user', ?, ?)",
             (chat_id, body.message, now),
         )
 
+        # カウント増加
         if user["plan"] == "free":
             await db.execute(
                 "UPDATE users SET messages_today = messages_today + 1 WHERE id = ?",
                 (body.user_id,),
             )
+        elif user["plan"] == "mainichi":
+            await db.execute(
+                "UPDATE users SET messages_week = messages_week + 1 WHERE id = ?",
+                (body.user_id,),
+            )
 
         await db.commit()
 
-        # Get history
+        # --- 会話履歴取得 ---
         cursor = await db.execute(
             "SELECT role, content FROM messages WHERE chat_id = ? ORDER BY created_at DESC LIMIT ?",
             (chat_id, settings.max_context_messages),
@@ -95,33 +166,18 @@ async def send_message(body: SendMessageRequest):
         rows = await cursor.fetchall()
         history = [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
 
-        # Get mode system prompt + user memory
-        system_prompt = get_system_prompt(body.mode)
-        user_context = await get_user_context(body.user_id)
-        system_prompt += user_context
+        # --- システムプロンプト構築 ---
+        system_prompt = build_system_prompt(
+            nickname=user["nickname"] or "",
+            custom_personality=user["custom_personality"] or "",
+        )
 
         async def generate():
             full_response = ""
             try:
-                # Collect full response from local LLM
                 async for token in stream_chat(history, system_prompt=system_prompt):
                     full_response += token
                     yield f"data: {token}\n\n"
-
-                # After streaming completes, check fallback ONLY if user opted in + has quota
-                use_external = user["external_ai"] == 1
-                if use_external and full_response and needs_fallback(full_response):
-                    has_quota = await can_use_haiku(body.user_id, user["plan"])
-                    if has_quota:
-                        keywords = extract_topic_keywords(body.message)
-                        haiku_fact = await lookup_with_haiku(keywords)
-                        if haiku_fact:
-                            await increment_haiku_usage(body.user_id)
-                            supplement = f"\n\n（補足: {haiku_fact}）"
-                            for char in supplement:
-                                yield f"data: {char}\n\n"
-                            full_response += supplement
-
                 yield "data: [DONE]\n\n"
             finally:
                 db2 = await get_db()
@@ -137,11 +193,6 @@ async def send_message(body: SendMessageRequest):
                     await db2.commit()
                 finally:
                     await db2.close()
-
-                # Extract memories in background (non-blocking)
-                asyncio.create_task(
-                    extract_and_save_memories(body.user_id, body.message, full_response)
-                )
 
         return StreamingResponse(
             generate(),
@@ -185,9 +236,9 @@ async def delete_chat(chat_id: str, user_id: str):
         cursor = await db.execute("SELECT user_id FROM chats WHERE id = ?", (chat_id,))
         chat = await cursor.fetchone()
         if not chat:
-            raise HTTPException(status_code=404, detail="Chat not found")
+            raise HTTPException(status_code=404, detail="チャットが見つかりません")
         if chat["user_id"] != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+            raise HTTPException(status_code=403, detail="権限がありません")
 
         await db.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
         await db.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
@@ -197,13 +248,87 @@ async def delete_chat(chat_id: str, user_id: str):
         await db.close()
 
 
-@router.get("/memory/{user_id}")
-async def get_memories(user_id: str):
-    memories = await get_user_memories(user_id)
-    return {"memories": memories}
+# --- 気分記録 ---
+
+@router.post("/mood")
+async def record_mood(body: MoodLogRequest):
+    if body.score < 1 or body.score > 5:
+        raise HTTPException(status_code=400, detail="スコアは1〜5で指定してください")
+
+    db = await get_db()
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        await db.execute(
+            "INSERT INTO mood_logs (user_id, score, note, tags, created_at) VALUES (?, ?, ?, ?, ?)",
+            (body.user_id, body.score, body.note, body.tags, now),
+        )
+        await db.commit()
+        return {"status": "recorded"}
+    finally:
+        await db.close()
 
 
-@router.delete("/memory/{user_id}/{memory_id}")
-async def remove_memory(user_id: str, memory_id: int):
-    await delete_user_memory(user_id, memory_id)
-    return {"status": "deleted"}
+@router.get("/mood/{user_id}")
+async def get_mood_logs(user_id: str, days: int = 7):
+    db = await get_db()
+    try:
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        cursor = await db.execute(
+            "SELECT score, note, tags, created_at FROM mood_logs WHERE user_id = ? AND created_at >= ? ORDER BY created_at DESC",
+            (user_id, since),
+        )
+        return {"moods": [dict(r) for r in await cursor.fetchall()]}
+    finally:
+        await db.close()
+
+
+# --- 週次振り返り（有料プラン限定） ---
+
+@router.get("/retrospective/{user_id}")
+async def weekly_retrospective(user_id: str):
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT plan FROM users WHERE id = ?", (user_id,))
+        user = await cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="ユーザーが見つかりません")
+        if user["plan"] == "free":
+            raise HTTPException(status_code=403, detail="まいにちプラン限定の機能です")
+
+        # 過去7日間の気分ログ
+        since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        cursor = await db.execute(
+            "SELECT score, note, tags, created_at FROM mood_logs WHERE user_id = ? AND created_at >= ? ORDER BY created_at",
+            (user_id, since),
+        )
+        moods = [dict(r) for r in await cursor.fetchall()]
+
+        # 過去7日間のチャット数
+        cursor = await db.execute(
+            "SELECT COUNT(*) as cnt FROM messages WHERE chat_id IN "
+            "(SELECT id FROM chats WHERE user_id = ?) AND role = 'user' AND created_at >= ?",
+            (user_id, since),
+        )
+        msg_count = (await cursor.fetchone())["cnt"]
+
+        if not moods and msg_count == 0:
+            return {"retrospective": "今週はまだ記録がありません。気分を記録してみてね。"}
+
+        # 気分の統計
+        if moods:
+            avg_score = sum(m["score"] for m in moods) / len(moods)
+            mood_emoji = ["", "😢", "😔", "😐", "😊", "😄"]
+            summary_parts = [
+                f"📊 今週の気分: 平均 {avg_score:.1f}/5 {mood_emoji[round(avg_score)]}",
+                f"📝 気分記録: {len(moods)}回",
+                f"💬 会話数: {msg_count}回",
+            ]
+        else:
+            summary_parts = [
+                "📝 気分記録: なし",
+                f"💬 会話数: {msg_count}回",
+            ]
+
+        return {"retrospective": "\n".join(summary_parts), "moods": moods, "message_count": msg_count}
+    finally:
+        await db.close()

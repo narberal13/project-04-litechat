@@ -1,4 +1,4 @@
-"""User API — registration, login, settings, and password reset."""
+"""きくよ User API — 登録、ログイン、設定、カスタム人格。"""
 
 import asyncio
 import hashlib
@@ -50,7 +50,7 @@ async def register(body: RegisterRequest):
     try:
         now = datetime.now(timezone.utc).isoformat()
 
-        cursor = await db.execute("SELECT id, plan FROM users WHERE email = ?", (body.email,))
+        cursor = await db.execute("SELECT id FROM users WHERE email = ?", (body.email,))
         existing = await cursor.fetchone()
         if existing:
             raise HTTPException(status_code=409, detail="このメールアドレスは既に登録されています。ログインしてください。")
@@ -63,7 +63,7 @@ async def register(body: RegisterRequest):
         )
         await db.commit()
         asyncio.create_task(notify_new_user(body.email, "free"))
-        return {"user_id": user_id, "email": body.email, "plan": "free", "external_ai": False}
+        return {"user_id": user_id, "email": body.email, "plan": "free"}
     finally:
         await db.close()
 
@@ -74,7 +74,7 @@ async def login(body: LoginRequest):
     try:
         email = body.email.lower().strip()
         cursor = await db.execute(
-            "SELECT id, email, plan, external_ai, password_hash FROM users WHERE email = ?",
+            "SELECT id, email, plan, nickname, password_hash FROM users WHERE email = ?",
             (email,),
         )
         user = await cursor.fetchone()
@@ -82,7 +82,6 @@ async def login(body: LoginRequest):
         if not user:
             raise HTTPException(status_code=401, detail="メールアドレスまたはパスワードが正しくありません")
 
-        # Allow login without password for legacy users (password_hash is None)
         if user["password_hash"] and user["password_hash"] != hash_password(body.password):
             raise HTTPException(status_code=401, detail="メールアドレスまたはパスワードが正しくありません")
 
@@ -90,7 +89,7 @@ async def login(body: LoginRequest):
             "user_id": user["id"],
             "email": user["email"],
             "plan": user["plan"],
-            "external_ai": bool(user["external_ai"]),
+            "nickname": user["nickname"] or "",
         }
     finally:
         await db.close()
@@ -101,7 +100,7 @@ async def get_user(user_id: str):
     db = await get_db()
     try:
         cursor = await db.execute(
-            "SELECT id, email, plan, external_ai, messages_today, created_at FROM users WHERE id = ?",
+            "SELECT id, email, plan, nickname, messages_today, messages_week, created_at FROM users WHERE id = ?",
             (user_id,),
         )
         user = await cursor.fetchone()
@@ -112,20 +111,64 @@ async def get_user(user_id: str):
         await db.close()
 
 
-class UpdateSettingsRequest(BaseModel):
-    external_ai: bool
+class UpdateNicknameRequest(BaseModel):
+    nickname: str
 
 
-@router.post("/{user_id}/settings")
-async def update_settings(user_id: str, body: UpdateSettingsRequest):
+@router.post("/{user_id}/nickname")
+async def update_nickname(user_id: str, body: UpdateNicknameRequest):
     db = await get_db()
     try:
+        nickname = body.nickname.strip()[:20]
         await db.execute(
-            "UPDATE users SET external_ai = ? WHERE id = ?",
-            (1 if body.external_ai else 0, user_id),
+            "UPDATE users SET nickname = ? WHERE id = ?",
+            (nickname, user_id),
         )
         await db.commit()
-        return {"external_ai": body.external_ai}
+        return {"nickname": nickname}
+    finally:
+        await db.close()
+
+
+class UpdatePersonalityRequest(BaseModel):
+    personality: str
+
+
+@router.get("/{user_id}/personality")
+async def get_personality(user_id: str):
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT plan, custom_personality FROM users WHERE id = ?", (user_id,))
+        user = await cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="ユーザーが見つかりません")
+        if user["plan"] == "free":
+            raise HTTPException(status_code=403, detail="まいにちプラン限定の機能です")
+        return {"personality": user["custom_personality"] or ""}
+    finally:
+        await db.close()
+
+
+@router.post("/{user_id}/personality")
+async def update_personality(user_id: str, body: UpdatePersonalityRequest):
+    """カスタム人格設定（.md形式で保存、有料プラン限定）。"""
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT plan FROM users WHERE id = ?", (user_id,))
+        user = await cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="ユーザーが見つかりません")
+        if user["plan"] == "free":
+            raise HTTPException(status_code=403, detail="まいにちプラン限定の機能です")
+
+        # 最大2000文字に制限
+        personality = body.personality.strip()[:2000]
+        await db.execute(
+            "UPDATE users SET custom_personality = ? WHERE id = ?",
+            (personality, user_id),
+        )
+        await db.commit()
+        return {"personality": personality}
     finally:
         await db.close()
 

@@ -5,32 +5,30 @@ export default function PrivacyPage() {
 
       <section style={{ marginBottom: 28 }}>
         <h2 style={{ fontSize: "1.1rem" }}>1. 基本方針</h2>
-        <p>LiteChatは、ユーザーのプライバシーを最優先に設計されたAIチャットサービスです。デフォルトではユーザーデータは一切外部に送信されません。</p>
+        <p>「きくよ」は、ユーザーのプライバシーを重視したAI傾聴サービスです。会話内容は7日後に自動削除されます。</p>
       </section>
 
       <section style={{ marginBottom: 28 }}>
         <h2 style={{ fontSize: "1.1rem" }}>2. 収集する情報</h2>
         <ul style={{ paddingLeft: 20, marginTop: 8 }}>
-          <li>メールアドレス（アカウント識別・通知に使用）</li>
-          <li>チャット内容（サービス提供のために保存）</li>
-          <li>ユーザーメモリ情報（パーソナライズのために保存）</li>
-          <li>決済情報（Stripe/PayPalを通じて処理。当サービスではカード情報を保持しません）</li>
+          <li>メールアドレス（アカウント識別に使用）</li>
+          <li>チャット内容（サービス提供のために一時保存、7日後に自動削除）</li>
+          <li>気分記録（ユーザーが任意で記録した気分スコア）</li>
+          <li>ニックネーム（任意設定）</li>
+          <li>決済情報（Stripeを通じて処理。当サービスではカード情報を保持しません）</li>
         </ul>
       </section>
 
       <section style={{ marginBottom: 28 }}>
-        <h2 style={{ fontSize: "1.1rem" }}>3. データの処理場所</h2>
-        <p><strong>ローカルAI処理:</strong> チャット内容はサーバー内のローカルLLMで処理されます。データは外部に送信されません。</p>
-        <p style={{ marginTop: 8 }}><strong>高精度AI補助（オプション）:</strong> ユーザーが設定で有効にした場合のみ、質問のキーワード（トピックのみ）が外部AI（Anthropic Claude）に送信されます。ユーザーの会話内容全文が送信されることはありません。この機能はデフォルトで無効です。</p>
+        <h2 style={{ fontSize: "1.1rem" }}>3. データの処理</h2>
+        <p>チャット内容はAnthropic社のClaude Haiku APIで処理されます。処理後のデータはAnthropic社で学習に使用されることはありません（API利用規約に基づく）。</p>
       </section>
 
       <section style={{ marginBottom: 28 }}>
         <h2 style={{ fontSize: "1.1rem" }}>4. データの保存期間</h2>
         <ul style={{ paddingLeft: 20 }}>
-          <li>Freeプラン: チャット履歴はセッション中のみ</li>
-          <li>Liteプラン: チャット履歴7日間保存後、自動削除</li>
-          <li>Proプラン: チャット履歴30日間保存後、自動削除</li>
-          <li>ユーザーメモリ: ユーザーが手動で削除可能</li>
+          <li>チャット履歴: 7日間保存後、自動削除（全プラン共通）</li>
+          <li>気分記録: ユーザーが手動で削除可能</li>
           <li>アカウント情報: ユーザーからの削除リクエストに基づき速やかに削除</li>
         </ul>
       </section>
@@ -41,8 +39,8 @@ export default function PrivacyPage() {
         <ul style={{ paddingLeft: 20, marginTop: 8 }}>
           <li>ユーザーの同意がある場合</li>
           <li>法令に基づく場合</li>
-          <li>決済処理に必要な範囲（Stripe/PayPal）</li>
-          <li>ユーザーが高精度AI補助を有効にした場合（Anthropic Claude — キーワードのみ）</li>
+          <li>決済処理に必要な範囲（Stripe）</li>
+          <li>AI応答生成のために必要な範囲（Anthropic — 会話内容）</li>
         </ul>
       </section>
 
@@ -52,13 +50,13 @@ export default function PrivacyPage() {
       </section>
 
       <section style={{ marginBottom: 28 }}>
-        <h2 style={{ fontSize: "1.1rem" }}>7. セキュリティ</h2>
-        <p>SSL/TLS暗号化通信、アクセス制限、定期バックアップ等の安全管理措置を講じます。</p>
+        <h2 style={{ fontSize: "1.1rem" }}>7. 注意事項</h2>
+        <p>「きくよ」は医療機関ではありません。深刻な悩みや危機的状況では、いのちの電話（0120-783-556）やよりそいホットライン（0120-279-338）にご連絡ください。</p>
       </section>
 
       <section style={{ marginBottom: 28 }}>
         <h2 style={{ fontSize: "1.1rem" }}>8. お問い合わせ</h2>
-        <p>メール: <a href="mailto:support@pik-tal.com">support@pik-tal.com</a></p>
+        <p>メール: <a href="mailto:toollab13@gmail.com">toollab13@gmail.com</a></p>
       </section>
 
       <p style={{ marginTop: 32, color: "var(--text-muted)", fontSize: 12 }}>最終更新日: 2026年4月9日</p>

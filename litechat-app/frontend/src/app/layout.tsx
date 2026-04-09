@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "LiteChat - 月300円からのAIチャット",
-  description: "月300円からAI使い放題。ChatGPT Plusの1/10の価格。プライバシー重視、データ外部送信なし。",
+  title: "きくよ - あなたの話を聴くAI",
+  description: "月500円で、あなたの話をただ聴いてくれるAI。愚痴も、悩みも、何でも。全力で肯定します。",
   metadataBase: new URL("https://pik-tal.com"),
 };
 

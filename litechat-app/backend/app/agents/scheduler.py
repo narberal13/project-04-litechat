@@ -1,7 +1,9 @@
-"""Agent Scheduler — APSchedulerで定期実行を管理。
+"""きくよ Agent Scheduler — 定期実行管理。
 
-- DevOps: 5分間隔でヘルスチェック
+- DevOps: 5分間隔でAPIヘルスチェック
 - CEO: 毎日UTC 0:00（JST 9:00）に日次レポート
+- Support: 毎日UTC 3:00（JST 12:00）に非アクティブ検知
+- Cleanup: 毎日UTC 15:00（JST 0:00）に7日以上前のメッセージ削除
 """
 
 import asyncio
@@ -28,10 +30,37 @@ def _run_async(coro_func):
     return wrapper
 
 
-def start_agents():
-    """スケジューラーを起動。FastAPIのlifespanから呼ぶ。"""
+async def cleanup_old_messages():
+    """7日以上前のメッセージを自動削除（プライバシー保護）。"""
+    from app.database import get_db
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT COUNT(*) as cnt FROM messages WHERE created_at < datetime('now', '-7 days')"
+        )
+        count = (await cursor.fetchone())["cnt"]
 
-    # DevOps: 5分間隔でヘルスチェック
+        if count > 0:
+            await db.execute(
+                "DELETE FROM messages WHERE created_at < datetime('now', '-7 days')"
+            )
+            # 空になったチャットも削除
+            await db.execute(
+                "DELETE FROM chats WHERE id NOT IN (SELECT DISTINCT chat_id FROM messages)"
+            )
+            await db.commit()
+            logger.info(f"Cleanup: deleted {count} messages older than 7 days")
+            await send_discord(
+                f"🧹 **自動クリーンアップ完了**\n  {count}件の古いメッセージを削除しました",
+                username="System",
+            )
+    finally:
+        await db.close()
+
+
+def start_agents():
+    """スケジューラーを起動。"""
+
     scheduler.add_job(
         _run_async(check_health),
         trigger=IntervalTrigger(minutes=5),
@@ -39,7 +68,6 @@ def start_agents():
         replace_existing=True,
     )
 
-    # CEO: 毎日 UTC 0:00 (JST 9:00) に日次レポート
     scheduler.add_job(
         _run_async(daily_summary),
         trigger=CronTrigger(hour=0, minute=0),
@@ -47,7 +75,6 @@ def start_agents():
         replace_existing=True,
     )
 
-    # Support: 毎日 UTC 3:00 (JST 12:00) に非アクティブユーザー検知
     scheduler.add_job(
         _run_async(check_inactive_users),
         trigger=CronTrigger(hour=3, minute=0),
@@ -55,17 +82,24 @@ def start_agents():
         replace_existing=True,
     )
 
-    scheduler.start()
-    logger.info("Agent scheduler started (DevOps: 5min, CEO: daily 09:00 JST)")
+    # 7日以上前のメッセージ自動削除（毎日JST 0:00 = UTC 15:00）
+    scheduler.add_job(
+        _run_async(cleanup_old_messages),
+        trigger=CronTrigger(hour=15, minute=0),
+        id="cleanup_messages",
+        replace_existing=True,
+    )
 
-    # 起動通知
+    scheduler.start()
+    logger.info("きくよ Agent scheduler started")
+
     asyncio.get_event_loop().create_task(
         send_discord(
-            "🚀 **LiteChat Agents 起動**\n"
+            "🚀 **きくよ Agents 起動**\n"
             "- DevOps Agent: 5分間隔ヘルスチェック\n"
-            "- Finance Agent: 待機中（日次レポートで起動）\n"
             "- Support Agent: 毎日 12:00 JST に非アクティブ検知\n"
-            "- CEO Agent: 毎日 09:00 JST に日次レポート",
+            "- CEO Agent: 毎日 09:00 JST に日次レポート\n"
+            "- Cleanup: 毎日 00:00 JST に7日以上前のメッセージ削除",
             username="System",
         )
     )
@@ -75,4 +109,4 @@ def stop_agents():
     """スケジューラーを停止。"""
     if scheduler.running:
         scheduler.shutdown(wait=False)
-        logger.info("Agent scheduler stopped")
+        logger.info("きくよ Agent scheduler stopped")

@@ -1,9 +1,11 @@
+"""きくよ — データベーススキーマ。"""
+
 import aiosqlite
 from pathlib import Path
 
 DB_DIR = Path("/app/data")
 DB_DIR.mkdir(parents=True, exist_ok=True)
-DB_PATH = DB_DIR / "litechat.db"
+DB_PATH = DB_DIR / "kikuyo.db"
 
 
 async def get_db() -> aiosqlite.Connection:
@@ -20,21 +22,21 @@ async def init_db():
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT,
                 plan TEXT DEFAULT 'free',
-                external_ai INTEGER DEFAULT 0,
-                haiku_used_today INTEGER DEFAULT 0,
-                haiku_used_week INTEGER DEFAULT 0,
-                haiku_reset_daily TEXT,
-                haiku_reset_weekly TEXT,
+                nickname TEXT DEFAULT '',
+                ai_tone TEXT DEFAULT '',
+                custom_personality TEXT DEFAULT '',
                 stripe_customer_id TEXT,
                 messages_today INTEGER DEFAULT 0,
                 messages_today_reset TEXT,
+                messages_week INTEGER DEFAULT 0,
+                messages_week_reset TEXT,
                 created_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS chats (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL,
-                title TEXT DEFAULT 'New Chat',
+                title TEXT DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id)
@@ -50,6 +52,16 @@ async def init_db():
                 FOREIGN KEY (chat_id) REFERENCES chats(id)
             );
 
+            CREATE TABLE IF NOT EXISTS mood_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                score INTEGER NOT NULL,
+                note TEXT DEFAULT '',
+                tags TEXT DEFAULT '',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+
             CREATE TABLE IF NOT EXISTS usage_stats (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT NOT NULL,
@@ -60,16 +72,7 @@ async def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_chats_user ON chats(user_id);
             CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id, created_at);
-            CREATE TABLE IF NOT EXISTS user_memory (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
-                fact TEXT NOT NULL,
-                category TEXT DEFAULT 'general',
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            );
-
             CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-            CREATE INDEX IF NOT EXISTS idx_user_memory ON user_memory(user_id);
+            CREATE INDEX IF NOT EXISTS idx_mood_logs_user ON mood_logs(user_id, created_at);
         """)
         await db.commit()

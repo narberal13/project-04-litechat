@@ -1,4 +1,4 @@
-"""LiteChat API — main application."""
+"""きくよ API — 傾聴AIサービス。"""
 
 from contextlib import asynccontextmanager
 
@@ -19,9 +19,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="LiteChat API",
-    description="月¥300からのAIチャットサービス",
-    version="0.1.0",
+    title="きくよ API",
+    description="あなたの話を聴くAI — 月¥500",
+    version="1.0.0",
     lifespan=lifespan,
 )
 

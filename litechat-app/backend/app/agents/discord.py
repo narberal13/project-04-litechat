@@ -4,7 +4,7 @@ import httpx
 from app.config import settings
 
 
-async def send_discord(content: str, username: str = "LiteChat Agent"):
+async def send_discord(content: str, username: str = "きくよ Agent"):
     """Discord Webhookにメッセージを送信。URLが未設定なら何もしない。"""
     if not settings.discord_webhook_url:
         return
@@ -16,4 +16,4 @@ async def send_discord(content: str, username: str = "LiteChat Agent"):
                 json={"content": content, "username": username},
             )
     except Exception:
-        pass  # Discord通知失敗は無視
+        pass

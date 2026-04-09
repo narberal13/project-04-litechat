@@ -1,4 +1,4 @@
-"""Stripe payment API — checkout, webhook, customer portal."""
+"""きくよ Stripe決済 — チェックアウト、Webhook、カスタマーポータル。"""
 
 import asyncio
 import stripe
@@ -14,23 +14,14 @@ router = APIRouter(prefix="/api/stripe", tags=["stripe"])
 
 stripe.api_key = settings.stripe_secret_key
 
-PLAN_PRICES = {
-    "lite": settings.stripe_price_lite,
-    "pro": settings.stripe_price_pro,
-}
-
 
 class CheckoutRequest(BaseModel):
     user_id: str
-    plan: str
 
 
 @router.post("/checkout")
 async def create_checkout(body: CheckoutRequest):
-    if body.plan not in PLAN_PRICES:
-        raise HTTPException(status_code=400, detail="無効なプランです")
-
-    price_id = PLAN_PRICES[body.plan]
+    price_id = settings.stripe_price_mainichi
     if not price_id:
         raise HTTPException(status_code=500, detail="Price IDが未設定です")
 
@@ -44,7 +35,6 @@ async def create_checkout(body: CheckoutRequest):
         if not user:
             raise HTTPException(status_code=404, detail="ユーザーが見つかりません")
 
-        # Reuse existing Stripe customer or create new
         customer_id = user["stripe_customer_id"]
         if not customer_id:
             customer = stripe.Customer.create(
@@ -64,7 +54,7 @@ async def create_checkout(body: CheckoutRequest):
             line_items=[{"price": price_id, "quantity": 1}],
             success_url=f"{settings.app_url}/chat?payment=success",
             cancel_url=f"{settings.app_url}/chat?payment=cancel",
-            metadata={"user_id": body.user_id, "plan": body.plan},
+            metadata={"user_id": body.user_id},
         )
 
         return {"url": session.url}
@@ -87,10 +77,9 @@ async def stripe_webhook(request: Request):
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
         user_id = session.get("metadata", {}).get("user_id")
-        plan = session.get("metadata", {}).get("plan")
         customer_id = session.get("customer")
 
-        if user_id and plan:
+        if user_id:
             db = await get_db()
             try:
                 cursor = await db.execute("SELECT email, plan FROM users WHERE id = ?", (user_id,))
@@ -99,11 +88,11 @@ async def stripe_webhook(request: Request):
                 email = user["email"] if user else "unknown"
 
                 await db.execute(
-                    "UPDATE users SET plan = ?, stripe_customer_id = ? WHERE id = ?",
-                    (plan, customer_id, user_id),
+                    "UPDATE users SET plan = 'mainichi', stripe_customer_id = ? WHERE id = ?",
+                    (customer_id, user_id),
                 )
                 await db.commit()
-                asyncio.create_task(notify_plan_change(email, old_plan, plan))
+                asyncio.create_task(notify_plan_change(email, old_plan, "mainichi"))
             finally:
                 await db.close()
 
@@ -122,7 +111,7 @@ async def stripe_webhook(request: Request):
                 old_plan = user["plan"] if user else "unknown"
 
                 await db.execute(
-                    "UPDATE users SET plan = 'free' WHERE stripe_customer_id = ?",
+                    "UPDATE users SET plan = 'free', custom_personality = '' WHERE stripe_customer_id = ?",
                     (customer_id,),
                 )
                 await db.commit()
@@ -138,7 +127,7 @@ async def stripe_webhook(request: Request):
             db = await get_db()
             try:
                 await db.execute(
-                    "UPDATE users SET plan = 'free' WHERE stripe_customer_id = ?",
+                    "UPDATE users SET plan = 'free', custom_personality = '' WHERE stripe_customer_id = ?",
                     (customer_id,),
                 )
                 await db.commit()

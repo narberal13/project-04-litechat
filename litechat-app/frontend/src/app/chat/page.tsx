@@ -16,29 +16,12 @@ interface ChatItem {
   updated_at: string;
 }
 
-interface Mode {
-  id: string;
-  name: string;
-  icon: string;
-  description: string;
-}
-
-interface Memory {
-  id: number;
-  fact: string;
-  category: string;
-  created_at: string;
-}
-
-const DEFAULT_MODES: Mode[] = [
-  { id: "free", name: "フリーチャット", icon: "💬", description: "なんでも自由に聞けるAIチャット" },
-  { id: "brainstorm", name: "壁打ち・ブレスト", icon: "💡", description: "アイデアを広げる壁打ち相手" },
-  { id: "english", name: "英会話練習", icon: "🇬🇧", description: "英語で会話して、間違いを優しく訂正" },
-  { id: "interview", name: "面接練習", icon: "💼", description: "面接官として質問し、フィードバック" },
-  { id: "writing", name: "文章作成", icon: "✍️", description: "メール・ブログの下書きを一緒に作成" },
-  { id: "story", name: "ストーリー", icon: "📖", description: "AIと一緒に物語を作る対話型ゲーム" },
-  { id: "task", name: "タスク管理", icon: "📋", description: "やることを整理して優先度をつける" },
-  { id: "schedule", name: "スケジュール整理", icon: "📅", description: "予定を整理してタイムラインを作成" },
+const MOOD_EMOJIS = [
+  { score: 1, emoji: "😢", label: "つらい" },
+  { score: 2, emoji: "😔", label: "もやもや" },
+  { score: 3, emoji: "😐", label: "ふつう" },
+  { score: 4, emoji: "😊", label: "まあまあ" },
+  { score: 5, emoji: "😄", label: "いい感じ" },
 ];
 
 export default function ChatPage() {
@@ -49,33 +32,33 @@ export default function ChatPage() {
   const [authError, setAuthError] = useState("");
   const [authSuccess, setAuthSuccess] = useState("");
   const [plan, setPlan] = useState("free");
+  const [nickname, setNickname] = useState("");
   const [chatId, setChatId] = useState<string | null>(null);
   const [chats, setChats] = useState<ChatItem[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [currentMode, setCurrentMode] = useState("free");
-  const [showModes, setShowModes] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
-  const [modes] = useState<Mode[]>(DEFAULT_MODES);
 
-  // Settings panel state
+  // Settings
   const [showSettings, setShowSettings] = useState(false);
-  const [externalAi, setExternalAi] = useState(false);
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [settingsMsg, setSettingsMsg] = useState("");
   const [settingsError, setSettingsError] = useState("");
   const [paymentNotice, setPaymentNotice] = useState("");
+  const [editNickname, setEditNickname] = useState("");
+  const [personality, setPersonality] = useState("");
+  const [retroResult, setRetroResult] = useState("");
 
-  // Memory state
-  const [memories, setMemories] = useState<Memory[]>([]);
-
-  // Rate limit state
+  // Rate limit
   const [messagesToday, setMessagesToday] = useState(0);
-  const [freeLimit] = useState(10);
+  const [messagesWeek, setMessagesWeek] = useState(0);
+
+  // Mood
+  const [selectedMood, setSelectedMood] = useState<number | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -94,40 +77,30 @@ export default function ChatPage() {
       if (res.ok) {
         const data = await res.json();
         setPlan(data.plan);
-        setExternalAi(!!data.external_ai);
+        setNickname(data.nickname || "");
         setMessagesToday(data.messages_today || 0);
-      }
-    } catch { /* ignore */ }
-  }, []);
-
-  const loadMemories = useCallback(async (uid: string) => {
-    try {
-      const res = await fetch(`${API_URL}/api/chat/memory/${uid}`);
-      if (res.ok) {
-        const data = await res.json();
-        setMemories(data.memories);
+        setMessagesWeek(data.messages_week || 0);
       }
     } catch { /* ignore */ }
   }, []);
 
   useEffect(() => {
-    const saved = localStorage.getItem("litechat_user");
+    const saved = localStorage.getItem("kikuyo_user");
     if (saved) {
       const user = JSON.parse(saved);
       setUserId(user.user_id);
       setPlan(user.plan);
       setEmail(user.email || "");
+      setNickname(user.nickname || "");
       loadChats(user.user_id);
       loadUserInfo(user.user_id);
     }
 
-    // Handle payment redirect
     const params = new URLSearchParams(window.location.search);
     const payment = params.get("payment");
     if (payment === "success") {
-      setPaymentNotice("決済が完了しました。プランがアップグレードされます。");
+      setPaymentNotice("決済が完了しました！まいにちプランが有効になります。");
       window.history.replaceState({}, "", "/chat");
-      // Reload user info to get updated plan
       if (saved) {
         const user = JSON.parse(saved);
         setTimeout(() => loadUserInfo(user.user_id), 2000);
@@ -142,8 +115,7 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const isAdmin = email === "gamma.narberal@gmail.com" ||
-    (typeof window !== "undefined" && localStorage.getItem("litechat_user")?.includes("gamma.narberal"));
+  const isAdmin = email === "gamma.narberal@gmail.com";
 
   const handleAuth = async () => {
     setAuthError("");
@@ -163,8 +135,8 @@ export default function ChatPage() {
       const data = await res.json();
       setUserId(data.user_id);
       setPlan(data.plan);
-      setExternalAi(!!data.external_ai);
-      localStorage.setItem("litechat_user", JSON.stringify({ ...data, email }));
+      setNickname(data.nickname || "");
+      localStorage.setItem("kikuyo_user", JSON.stringify({ ...data, email }));
       loadChats(data.user_id);
       loadUserInfo(data.user_id);
     } catch {
@@ -187,7 +159,7 @@ export default function ChatPage() {
         return;
       }
       const data = await res.json();
-      setAuthSuccess(`仮パスワード: ${data.temporary_password}\nこのパスワードでログインし、設定から変更してください。`);
+      setAuthSuccess(`仮パスワード: ${data.temporary_password}\nこのパスワードでログインしてください。`);
       setShowForgot(false);
       setIsLogin(true);
     } catch {
@@ -196,31 +168,31 @@ export default function ChatPage() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("litechat_user");
+    localStorage.removeItem("kikuyo_user");
     setUserId(null);
     setEmail("");
     setPassword("");
     setPlan("free");
+    setNickname("");
     setChatId(null);
     setChats([]);
     setMessages([]);
-    setCurrentMode("free");
     setIsLogin(true);
-    setExternalAi(false);
-    setMemories([]);
-    setMessagesToday(0);
+    setSelectedMood(null);
   };
 
   const loadChat = async (cid: string) => {
     setChatId(cid);
-    const res = await fetch(`${API_URL}/api/chat/history/${cid}`);
-    const data = await res.json();
-    setMessages(
-      data.messages.map((m: { role: string; content: string }) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      }))
-    );
+    try {
+      const res = await fetch(`${API_URL}/api/chat/history/${cid}`);
+      const data = await res.json();
+      setMessages(
+        data.messages.map((m: { role: string; content: string }) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        }))
+      );
+    } catch { /* ignore */ }
     setSidebarOpen(false);
   };
 
@@ -228,14 +200,6 @@ export default function ChatPage() {
     setChatId(null);
     setMessages([]);
     setSidebarOpen(false);
-    setShowModes(true);
-  };
-
-  const selectMode = (modeId: string) => {
-    setCurrentMode(modeId);
-    setShowModes(false);
-    setChatId(null);
-    setMessages([]);
     inputRef.current?.focus();
   };
 
@@ -256,19 +220,17 @@ export default function ChatPage() {
     } catch { /* ignore */ }
   };
 
-  const toggleExternalAi = async () => {
+  const recordMood = async (score: number) => {
     if (!userId) return;
-    const newVal = !externalAi;
+    setSelectedMood(score);
     try {
-      const res = await fetch(`${API_URL}/api/users/${userId}/settings`, {
+      await fetch(`${API_URL}/api/chat/mood`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ external_ai: newVal }),
+        body: JSON.stringify({ user_id: userId, score }),
       });
-      if (res.ok) {
-        setExternalAi(newVal);
-      }
     } catch { /* ignore */ }
+    setTimeout(() => setSelectedMood(null), 2000);
   };
 
   const handleChangePassword = async () => {
@@ -298,14 +260,62 @@ export default function ChatPage() {
     }
   };
 
-  const deleteMemory = async (memoryId: number) => {
+  const saveNickname = async () => {
     if (!userId) return;
     try {
-      const res = await fetch(`${API_URL}/api/chat/memory/${userId}/${memoryId}`, {
-        method: "DELETE",
+      const res = await fetch(`${API_URL}/api/users/${userId}/nickname`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nickname: editNickname }),
       });
       if (res.ok) {
-        setMemories((prev) => prev.filter((m) => m.id !== memoryId));
+        const data = await res.json();
+        setNickname(data.nickname);
+        setSettingsMsg("ニックネームを保存しました");
+      }
+    } catch { /* ignore */ }
+  };
+
+  const loadPersonality = async () => {
+    if (!userId) return;
+    try {
+      const res = await fetch(`${API_URL}/api/users/${userId}/personality`);
+      if (res.ok) {
+        const data = await res.json();
+        setPersonality(data.personality || "");
+      }
+    } catch { /* ignore */ }
+  };
+
+  const savePersonality = async () => {
+    if (!userId) return;
+    try {
+      const res = await fetch(`${API_URL}/api/users/${userId}/personality`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ personality }),
+      });
+      if (res.ok) {
+        setSettingsMsg("AI人格設定を保存しました");
+      } else {
+        const err = await res.json();
+        setSettingsError(err.detail || "エラーが発生しました");
+      }
+    } catch {
+      setSettingsError("接続エラー");
+    }
+  };
+
+  const loadRetrospective = async () => {
+    if (!userId) return;
+    try {
+      const res = await fetch(`${API_URL}/api/chat/retrospective/${userId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setRetroResult(data.retrospective);
+      } else {
+        const err = await res.json();
+        setSettingsError(err.detail || "エラーが発生しました");
       }
     } catch { /* ignore */ }
   };
@@ -336,9 +346,11 @@ export default function ChatPage() {
     setSettingsError("");
     setOldPassword("");
     setNewPassword("");
+    setEditNickname(nickname);
+    setRetroResult("");
     if (userId) {
-      loadMemories(userId);
       loadUserInfo(userId);
+      if (plan !== "free") loadPersonality();
     }
   };
 
@@ -358,7 +370,6 @@ export default function ChatPage() {
           chat_id: chatId,
           message: userMsg,
           user_id: userId,
-          mode: currentMode,
         }),
       });
 
@@ -366,7 +377,7 @@ export default function ChatPage() {
         const err = await res.json();
         setMessages((prev) => [
           ...prev,
-          { role: "assistant", content: `Error: ${err.detail}` },
+          { role: "assistant", content: err.detail || "エラーが発生しました" },
         ]);
         setLoading(false);
         return;
@@ -401,12 +412,11 @@ export default function ChatPage() {
         }
       }
 
-      if (plan === "free") {
-        setMessagesToday((prev) => prev + 1);
-      }
+      if (plan === "free") setMessagesToday((prev) => prev + 1);
+      if (plan === "mainichi") setMessagesWeek((prev) => prev + 1);
       if (userId) loadChats(userId);
     } catch {
-      setMessages((prev) => [...prev, { role: "assistant", content: "Connection error." }]);
+      setMessages((prev) => [...prev, { role: "assistant", content: "接続エラーが発生しました。" }]);
     } finally {
       setLoading(false);
       inputRef.current?.focus();
@@ -420,18 +430,18 @@ export default function ChatPage() {
     }
   };
 
-  const currentModeInfo = modes.find((m) => m.id === currentMode) || modes[0];
-  const remainingMessages = Math.max(0, freeLimit - messagesToday);
+  const freeLimit = 3;
+  const weekLimit = 70;
 
   // Forgot password screen
   if (showForgot) {
     return (
       <div className={styles.loginContainer}>
         <div className={styles.loginCard}>
-          <h1 className={styles.loginTitle}>LiteChat</h1>
+          <h1 className={styles.loginTitle}>きくよ</h1>
           <p className={styles.loginSub}>パスワード再発行</p>
           <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>
-            登録済みのメールアドレスを入力してください。仮パスワードを発行します。
+            登録済みのメールアドレスを入力してください。
           </p>
           <input
             type="email"
@@ -463,8 +473,8 @@ export default function ChatPage() {
     return (
       <div className={styles.loginContainer}>
         <div className={styles.loginCard}>
-          <h1 className={styles.loginTitle}>LiteChat</h1>
-          <p className={styles.loginSub}>{isLogin ? "ログイン" : "無料で始める"}</p>
+          <h1 className={styles.loginTitle}>きくよ</h1>
+          <p className={styles.loginSub}>{isLogin ? "おかえりなさい" : "はじめまして"}</p>
           {authSuccess && <p className={styles.successMsg} style={{ whiteSpace: "pre-line" }}>{authSuccess}</p>}
           <input
             type="email"
@@ -483,14 +493,14 @@ export default function ChatPage() {
           />
           {authError && <p style={{ color: "#ef4444", fontSize: 13, marginBottom: 8 }}>{authError}</p>}
           <button className="btn btn-primary" onClick={handleAuth} style={{ width: "100%" }}>
-            {isLogin ? "ログイン" : "新規登録（無料）"}
+            {isLogin ? "ログイン" : "無料ではじめる"}
           </button>
           <p className={styles.loginNote}>
             <button
               onClick={() => { setIsLogin(!isLogin); setAuthError(""); setAuthSuccess(""); }}
               style={{ background: "none", border: "none", color: "var(--primary)", cursor: "pointer", fontSize: 13 }}
             >
-              {isLogin ? "アカウントをお持ちでない方 → 新規登録" : "既にアカウントをお持ちの方 → ログイン"}
+              {isLogin ? "はじめての方はこちら" : "アカウントをお持ちの方はこちら"}
             </button>
           </p>
           {isLogin && (
@@ -508,31 +518,14 @@ export default function ChatPage() {
       {/* Sidebar */}
       <div className={`${styles.sidebar} ${sidebarOpen ? styles.sidebarOpen : ""}`}>
         <div className={styles.sidebarHeader}>
-          <h2>LiteChat</h2>
+          <h2>きくよ</h2>
           <button className={styles.newChatBtn} onClick={newChat}>
-            + 新しいチャット
+            + 新しい会話
           </button>
         </div>
 
-        {/* Mode selector in sidebar */}
-        <div className={styles.modeSection}>
-          <div className={styles.modeSectionTitle}>モード</div>
-          <div className={styles.modeList}>
-            {modes.map((m) => (
-              <button
-                key={m.id}
-                className={`${styles.modeItem} ${m.id === currentMode ? styles.modeItemActive : ""}`}
-                onClick={() => selectMode(m.id)}
-              >
-                <span className={styles.modeIcon}>{m.icon}</span>
-                <span>{m.name}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
         <div className={styles.chatListSection}>
-          <div className={styles.modeSectionTitle}>履歴</div>
+          <div className={styles.chatListTitle}>履歴</div>
           <div className={styles.chatList}>
             {chats.map((c) => (
               <div key={c.id} className={styles.chatItemRow}>
@@ -556,9 +549,11 @@ export default function ChatPage() {
 
         <div className={styles.sidebarFooter}>
           <div>
-            <span className={styles.planBadge}>{plan === "free" ? "Free" : plan === "lite" ? "Lite" : "Pro"}</span>
+            <span className={styles.planBadge}>
+              {plan === "free" ? "おためし" : "まいにち"}
+            </span>
             {isAdmin && (
-              <a href="/admin" className={styles.adminLink}>Admin Dashboard</a>
+              <a href="/admin" className={styles.adminLink}>管理画面</a>
             )}
           </div>
           <div className={styles.footerButtons}>
@@ -578,12 +573,18 @@ export default function ChatPage() {
           <button className={styles.menuBtn} onClick={() => setSidebarOpen(!sidebarOpen)}>
             &#9776;
           </button>
-          <span className={styles.topMode}>
-            {currentModeInfo.icon} {currentModeInfo.name}
+          <span className={styles.topTitle}>
+            きくよ
           </span>
+          {nickname && <span className={styles.topSub}>{nickname}さんの話を聴いてます</span>}
           {plan === "free" && !isAdmin && (
             <span className={styles.rateLimit}>
-              残り {remainingMessages}/{freeLimit} 通/日
+              残り {Math.max(0, freeLimit - messagesToday)}/{freeLimit} 回/日
+            </span>
+          )}
+          {plan === "mainichi" && !isAdmin && (
+            <span className={styles.rateLimit}>
+              残り {Math.max(0, weekLimit - messagesWeek)}/{weekLimit} 回/週
             </span>
           )}
         </div>
@@ -595,21 +596,20 @@ export default function ChatPage() {
           </div>
         )}
 
-        {/* Mode selection overlay */}
-        {showModes && (
-          <div className={styles.modeOverlay}>
-            <h2>モードを選んでください</h2>
-            <div className={styles.modeGrid}>
-              {modes.map((m) => (
-                <button key={m.id} className={styles.modeCard} onClick={() => selectMode(m.id)}>
-                  <div className={styles.modeCardIcon}>{m.icon}</div>
-                  <div className={styles.modeCardName}>{m.name}</div>
-                  <div className={styles.modeCardDesc}>{m.description}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Mood bar */}
+        <div className={styles.moodBar}>
+          <span className={styles.moodLabel}>今の気分:</span>
+          {MOOD_EMOJIS.map((m) => (
+            <button
+              key={m.score}
+              className={`${styles.moodBtn} ${selectedMood === m.score ? styles.moodBtnActive : ""}`}
+              onClick={() => recordMood(m.score)}
+              title={m.label}
+            >
+              {m.emoji}
+            </button>
+          ))}
+        </div>
 
         {/* Settings overlay */}
         {showSettings && (
@@ -623,6 +623,9 @@ export default function ChatPage() {
               </div>
 
               <div className={styles.settingsBody}>
+                {settingsMsg && <p className={styles.successMsg}>{settingsMsg}</p>}
+                {settingsError && <p className={styles.errorMsg}>{settingsError}</p>}
+
                 {/* Account info */}
                 <div className={styles.settingsSection}>
                   <h3>アカウント</h3>
@@ -634,46 +637,99 @@ export default function ChatPage() {
                     <span className={styles.settingsLabel}>プラン</span>
                     <span className={styles.settingsValue}>
                       <span className={styles.planBadge}>
-                        {plan === "free" ? "Free" : plan === "lite" ? "Lite" : "Pro"}
+                        {plan === "free" ? "おためし" : "まいにち"}
                       </span>
                     </span>
                   </div>
                   {plan === "free" && !isAdmin && (
                     <div className={styles.settingsRow}>
-                      <span className={styles.settingsLabel}>本日の使用量</span>
-                      <span className={styles.settingsValue}>{messagesToday} / {freeLimit} メッセージ</span>
+                      <span className={styles.settingsLabel}>今日の使用</span>
+                      <span className={styles.settingsValue}>{messagesToday} / {freeLimit} 回</span>
                     </div>
                   )}
-                  {plan !== "free" && (
-                    <button className={styles.settingsActionBtn} onClick={openStripePortal} style={{ marginTop: 8 }}>
-                      サブスクリプション管理
-                    </button>
+                  {plan === "mainichi" && (
+                    <>
+                      <div className={styles.settingsRow}>
+                        <span className={styles.settingsLabel}>今週の使用</span>
+                        <span className={styles.settingsValue}>{messagesWeek} / {weekLimit} 回</span>
+                      </div>
+                      <button className={styles.settingsActionBtn} onClick={openStripePortal} style={{ marginTop: 8 }}>
+                        サブスクリプション管理
+                      </button>
+                    </>
+                  )}
+                  {plan === "free" && !isAdmin && (
+                    <a href="/" className={styles.settingsActionBtn} style={{ display: "block", textAlign: "center", marginTop: 8, textDecoration: "none" }}>
+                      まいにちプランに登録
+                    </a>
                   )}
                 </div>
 
-                {/* External AI toggle */}
+                {/* Nickname */}
                 <div className={styles.settingsSection}>
-                  <h3>高精度AI補助（Claude Haiku）</h3>
-                  <p className={styles.settingsDesc}>
-                    ローカルAIが回答できない場合、キーワードのみを外部AIに送信して補足情報を取得します。
-                    個人情報は送信されません。
-                  </p>
-                  <div className={styles.toggleRow}>
-                    <span>外部AI補助を有効にする</span>
-                    <button
-                      className={`${styles.toggle} ${externalAi ? styles.toggleOn : ""}`}
-                      onClick={toggleExternalAi}
-                    >
-                      <span className={styles.toggleKnob} />
-                    </button>
-                  </div>
+                  <h3>ニックネーム</h3>
+                  <p className={styles.settingsDesc}>きくよがこの名前で呼んでくれます。</p>
+                  <input
+                    type="text"
+                    placeholder="ニックネーム（20文字まで）"
+                    value={editNickname}
+                    onChange={(e) => setEditNickname(e.target.value)}
+                    className={styles.settingsInput}
+                    maxLength={20}
+                  />
+                  <button className={styles.settingsActionBtn} onClick={saveNickname}>
+                    保存
+                  </button>
+                </div>
+
+                {/* Custom personality (paid only) */}
+                <div className={styles.settingsSection}>
+                  <h3>AI人格カスタマイズ</h3>
+                  {plan === "free" ? (
+                    <p className={styles.paidFeatureNote}>
+                      まいにちプラン限定の機能です。きくよの話し方や性格をカスタマイズできます。
+                    </p>
+                  ) : (
+                    <>
+                      <p className={styles.settingsDesc}>
+                        きくよの性格や話し方をカスタマイズできます。マークダウン形式で記述してください（最大2000文字）。
+                      </p>
+                      <textarea
+                        className={styles.settingsTextarea}
+                        placeholder={"例:\n# きくよの人格設定\n- 関西弁で話す\n- たまにダジャレを言う\n- 「〜やね」「〜やん」を使う"}
+                        value={personality}
+                        onChange={(e) => setPersonality(e.target.value)}
+                        maxLength={2000}
+                      />
+                      <button className={styles.settingsActionBtn} onClick={savePersonality}>
+                        AI人格を保存
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                {/* Weekly retrospective (paid only) */}
+                <div className={styles.settingsSection}>
+                  <h3>週次ふりかえり</h3>
+                  {plan === "free" ? (
+                    <p className={styles.paidFeatureNote}>
+                      まいにちプラン限定の機能です。1週間の気分の変化を振り返れます。
+                    </p>
+                  ) : (
+                    <>
+                      <button className={styles.retroBtn} onClick={loadRetrospective}>
+                        今週のふりかえりを見る
+                      </button>
+                      {retroResult && (
+                        <div className={styles.retroResult}>{retroResult}</div>
+                      )}
+                    </>
+                  )}
                 </div>
 
                 {/* Password change */}
                 <div className={styles.settingsSection}>
                   <h3>パスワード変更</h3>
-                  {settingsMsg && <p className={styles.successMsg}>{settingsMsg}</p>}
-                  {settingsError && <p className={styles.errorMsg}>{settingsError}</p>}
                   <input
                     type="password"
                     placeholder="現在のパスワード"
@@ -693,35 +749,6 @@ export default function ChatPage() {
                     パスワードを変更
                   </button>
                 </div>
-
-                {/* Memory management */}
-                <div className={styles.settingsSection}>
-                  <h3>AIが記憶した情報</h3>
-                  <p className={styles.settingsDesc}>
-                    会話から自動的に抽出された情報です。不要なものは削除できます。
-                  </p>
-                  {memories.length === 0 ? (
-                    <p className={styles.settingsEmpty}>記憶された情報はまだありません</p>
-                  ) : (
-                    <div className={styles.memoryList}>
-                      {memories.map((m) => (
-                        <div key={m.id} className={styles.memoryItem}>
-                          <div className={styles.memoryContent}>
-                            <span className={styles.memoryCategory}>{m.category}</span>
-                            <span>{m.fact}</span>
-                          </div>
-                          <button
-                            className={styles.memoryDeleteBtn}
-                            onClick={() => deleteMemory(m.id)}
-                            title="削除"
-                          >
-                            &times;
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
               </div>
             </div>
           </div>
@@ -729,11 +756,11 @@ export default function ChatPage() {
 
         {/* Messages */}
         <div className={styles.messages}>
-          {messages.length === 0 && !showModes && (
+          {messages.length === 0 && (
             <div className={styles.emptyState}>
-              <div className={styles.emptyIcon}>{currentModeInfo.icon}</div>
-              <h2>{currentModeInfo.name}</h2>
-              <p>{currentModeInfo.description}</p>
+              <div className={styles.emptyIcon}>👂</div>
+              <h2>きくよ</h2>
+              <p>なんでも話してね。ただ聴くよ。</p>
             </div>
           )}
           {messages.map((msg, i) => (
@@ -755,11 +782,7 @@ export default function ChatPage() {
             <textarea
               ref={inputRef}
               className={styles.input}
-              placeholder={
-                currentMode === "english"
-                  ? "Type in English..."
-                  : "メッセージを入力..."
-              }
+              placeholder="なんでも話してね..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -771,7 +794,7 @@ export default function ChatPage() {
             </button>
           </div>
           <p className={styles.disclaimer}>
-            AIの回答は参考情報です。重要な判断にはご自身で確認してください。
+            きくよは医療専門家ではありません。深刻な悩みは専門機関にご相談ください。
           </p>
         </div>
       </div>
