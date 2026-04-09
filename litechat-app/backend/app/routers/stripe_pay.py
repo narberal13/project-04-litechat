@@ -1,5 +1,6 @@
 """Stripe payment API — checkout, webhook, customer portal."""
 
+import asyncio
 import stripe
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -7,6 +8,7 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.database import get_db
+from app.agents.support import notify_plan_change
 
 router = APIRouter(prefix="/api/stripe", tags=["stripe"])
 
@@ -91,11 +93,17 @@ async def stripe_webhook(request: Request):
         if user_id and plan:
             db = await get_db()
             try:
+                cursor = await db.execute("SELECT email, plan FROM users WHERE id = ?", (user_id,))
+                user = await cursor.fetchone()
+                old_plan = user["plan"] if user else "free"
+                email = user["email"] if user else "unknown"
+
                 await db.execute(
                     "UPDATE users SET plan = ?, stripe_customer_id = ? WHERE id = ?",
                     (plan, customer_id, user_id),
                 )
                 await db.commit()
+                asyncio.create_task(notify_plan_change(email, old_plan, plan))
             finally:
                 await db.close()
 
@@ -106,11 +114,19 @@ async def stripe_webhook(request: Request):
         if customer_id:
             db = await get_db()
             try:
+                cursor = await db.execute(
+                    "SELECT email, plan FROM users WHERE stripe_customer_id = ?", (customer_id,)
+                )
+                user = await cursor.fetchone()
+                email = user["email"] if user else "unknown"
+                old_plan = user["plan"] if user else "unknown"
+
                 await db.execute(
                     "UPDATE users SET plan = 'free' WHERE stripe_customer_id = ?",
                     (customer_id,),
                 )
                 await db.commit()
+                asyncio.create_task(notify_plan_change(email, old_plan, "free"))
             finally:
                 await db.close()
 

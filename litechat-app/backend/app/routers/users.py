@@ -1,5 +1,6 @@
 """User API — registration, login, settings, and password reset."""
 
+import asyncio
 import hashlib
 import random
 import string
@@ -10,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
 
 from app.database import get_db
+from app.agents.support import notify_new_user
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -60,6 +62,7 @@ async def register(body: RegisterRequest):
             (user_id, body.email, pw_hash, now),
         )
         await db.commit()
+        asyncio.create_task(notify_new_user(body.email, "free"))
         return {"user_id": user_id, "email": body.email, "plan": "free", "external_ai": False}
     finally:
         await db.close()

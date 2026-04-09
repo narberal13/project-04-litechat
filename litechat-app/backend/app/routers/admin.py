@@ -9,6 +9,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
 from app.database import get_db
+from app.agents.ceo import daily_summary
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 security = HTTPBasic()
@@ -74,6 +75,13 @@ async def dashboard(admin: str = Depends(verify_admin)):
         }
     finally:
         await db.close()
+
+
+@router.post("/report")
+async def trigger_report(admin: str = Depends(verify_admin)):
+    """手動で日次レポートをDiscordに送信。"""
+    await daily_summary()
+    return {"status": "report_sent"}
 
 
 @router.get("/users")

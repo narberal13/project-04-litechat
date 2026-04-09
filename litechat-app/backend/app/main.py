@@ -7,12 +7,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_db
 from app.routers import chat, users, health, admin, stripe_pay
+from app.agents.scheduler import start_agents, stop_agents
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    start_agents()
     yield
+    stop_agents()
 
 
 app = FastAPI(
