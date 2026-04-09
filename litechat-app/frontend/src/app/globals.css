@@ -1,14 +1,14 @@
 :root {
-  --primary: #6366f1;
-  --primary-dark: #4f46e5;
-  --bg: #0f0f14;
-  --surface: #1a1a24;
-  --surface-hover: #22222e;
-  --text: #e4e4e7;
-  --text-muted: #71717a;
-  --border: #27272a;
-  --user-bg: #6366f1;
-  --assistant-bg: #1e1e2a;
+  --primary: #c17f59;
+  --primary-dark: #a86b48;
+  --bg: #faf7f2;
+  --surface: #ffffff;
+  --surface-hover: #f5efe8;
+  --text: #3d3229;
+  --text-muted: #8c7e72;
+  --border: #e8ddd3;
+  --user-bg: #c17f59;
+  --assistant-bg: #f5efe8;
   --radius: 12px;
 }
 
@@ -22,6 +22,7 @@ body {
 }
 
 a { color: var(--primary); text-decoration: none; }
+a:hover { color: var(--primary-dark); }
 
 .btn {
   display: inline-flex;

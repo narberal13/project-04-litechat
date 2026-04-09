@@ -40,6 +40,7 @@ export default function ChatPage() {
   const [password, setPassword] = useState("");
   const [isLogin, setIsLogin] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [authSuccess, setAuthSuccess] = useState("");
   const [plan, setPlan] = useState("free");
   const [chatId, setChatId] = useState<string | null>(null);
   const [chats, setChats] = useState<ChatItem[]>([]);
@@ -49,6 +50,8 @@ export default function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentMode, setCurrentMode] = useState("free");
   const [showModes, setShowModes] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
   const [modes] = useState<Mode[]>(DEFAULT_MODES);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -59,6 +62,7 @@ export default function ChatPage() {
       const user = JSON.parse(saved);
       setUserId(user.user_id);
       setPlan(user.plan);
+      setEmail(user.email || "");
       loadChats(user.user_id);
     }
   }, []);
@@ -72,6 +76,7 @@ export default function ChatPage() {
 
   const handleAuth = async () => {
     setAuthError("");
+    setAuthSuccess("");
     const endpoint = isLogin ? "login" : "register";
     try {
       const res = await fetch(`${API_URL}/api/users/${endpoint}`, {
@@ -92,6 +97,42 @@ export default function ChatPage() {
     } catch {
       setAuthError("接続エラー");
     }
+  };
+
+  const handleForgotPassword = async () => {
+    setAuthError("");
+    setAuthSuccess("");
+    try {
+      const res = await fetch(`${API_URL}/api/users/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        setAuthError(err.detail || "エラーが発生しました");
+        return;
+      }
+      const data = await res.json();
+      setAuthSuccess(`仮パスワード: ${data.temporary_password}\nこのパスワードでログインし、設定から変更してください。`);
+      setShowForgot(false);
+      setIsLogin(true);
+    } catch {
+      setAuthError("接続エラー");
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("litechat_user");
+    setUserId(null);
+    setEmail("");
+    setPassword("");
+    setPlan("free");
+    setChatId(null);
+    setChats([]);
+    setMessages([]);
+    setCurrentMode("free");
+    setIsLogin(true);
   };
 
   const loadChats = async (uid: string) => {
@@ -205,6 +246,41 @@ export default function ChatPage() {
 
   const currentModeInfo = modes.find((m) => m.id === currentMode) || modes[0];
 
+  // Forgot password screen
+  if (showForgot) {
+    return (
+      <div className={styles.loginContainer}>
+        <div className={styles.loginCard}>
+          <h1 className={styles.loginTitle}>LiteChat</h1>
+          <p className={styles.loginSub}>パスワード再発行</p>
+          <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>
+            登録済みのメールアドレスを入力してください。仮パスワードを発行します。
+          </p>
+          <input
+            type="email"
+            placeholder="メールアドレス"
+            value={forgotEmail}
+            onChange={(e) => setForgotEmail(e.target.value)}
+            className={styles.loginInput}
+            onKeyDown={(e) => e.key === "Enter" && handleForgotPassword()}
+          />
+          {authError && <p style={{ color: "#ef4444", fontSize: 13, marginBottom: 8 }}>{authError}</p>}
+          <button className="btn btn-primary" onClick={handleForgotPassword} style={{ width: "100%" }}>
+            仮パスワードを発行
+          </button>
+          <p className={styles.loginNote}>
+            <button
+              onClick={() => { setShowForgot(false); setAuthError(""); }}
+              style={{ background: "none", border: "none", color: "var(--primary)", cursor: "pointer", fontSize: 13 }}
+            >
+              ログインに戻る
+            </button>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // Login screen
   if (!userId) {
     return (
@@ -212,6 +288,7 @@ export default function ChatPage() {
         <div className={styles.loginCard}>
           <h1 className={styles.loginTitle}>LiteChat</h1>
           <p className={styles.loginSub}>{isLogin ? "ログイン" : "無料で始める"}</p>
+          {authSuccess && <p className={styles.successMsg} style={{ whiteSpace: "pre-line" }}>{authSuccess}</p>}
           <input
             type="email"
             placeholder="メールアドレス"
@@ -233,12 +310,17 @@ export default function ChatPage() {
           </button>
           <p className={styles.loginNote}>
             <button
-              onClick={() => { setIsLogin(!isLogin); setAuthError(""); }}
+              onClick={() => { setIsLogin(!isLogin); setAuthError(""); setAuthSuccess(""); }}
               style={{ background: "none", border: "none", color: "var(--primary)", cursor: "pointer", fontSize: 13 }}
             >
               {isLogin ? "アカウントをお持ちでない方 → 新規登録" : "既にアカウントをお持ちの方 → ログイン"}
             </button>
           </p>
+          {isLogin && (
+            <button className={styles.forgotLink} onClick={() => { setShowForgot(true); setAuthError(""); setAuthSuccess(""); }}>
+              パスワードを忘れた方
+            </button>
+          )}
         </div>
       </div>
     );
@@ -288,10 +370,15 @@ export default function ChatPage() {
         </div>
 
         <div className={styles.sidebarFooter}>
-          <span className={styles.planBadge}>{plan === "free" ? "Free" : plan}</span>
-          {isAdmin && (
-            <a href="/admin" className={styles.adminLink}>Admin Dashboard</a>
-          )}
+          <div>
+            <span className={styles.planBadge}>{plan === "free" ? "Free" : plan}</span>
+            {isAdmin && (
+              <a href="/admin" className={styles.adminLink}>Admin Dashboard</a>
+            )}
+          </div>
+          <button className={styles.logoutBtn} onClick={handleLogout}>
+            ログアウト
+          </button>
         </div>
       </div>
 
