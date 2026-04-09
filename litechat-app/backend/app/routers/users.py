@@ -1,6 +1,8 @@
-"""User API — registration, login, and settings."""
+"""User API — registration, login, settings, and password reset."""
 
 import hashlib
+import random
+import string
 import uuid
 from datetime import datetime, timezone
 
@@ -121,5 +123,60 @@ async def update_settings(user_id: str, body: UpdateSettingsRequest):
         )
         await db.commit()
         return {"external_ai": body.external_ai}
+    finally:
+        await db.close()
+
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+
+
+@router.post("/reset-password")
+async def reset_password(body: ResetPasswordRequest):
+    db = await get_db()
+    try:
+        email = body.email.lower().strip()
+        cursor = await db.execute("SELECT id FROM users WHERE email = ?", (email,))
+        user = await cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="このメールアドレスは登録されていません")
+
+        temp_password = "".join(random.choices(string.ascii_letters + string.digits, k=8))
+        pw_hash = hash_password(temp_password)
+        await db.execute("UPDATE users SET password_hash = ? WHERE email = ?", (pw_hash, email))
+        await db.commit()
+        return {"temporary_password": temp_password}
+    finally:
+        await db.close()
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, v: str) -> str:
+        if len(v) < 4:
+            raise ValueError("新しいパスワードは4文字以上にしてください")
+        return v
+
+
+@router.post("/{user_id}/change-password")
+async def change_password(user_id: str, body: ChangePasswordRequest):
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,))
+        user = await cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="ユーザーが見つかりません")
+
+        if user["password_hash"] and user["password_hash"] != hash_password(body.old_password):
+            raise HTTPException(status_code=401, detail="現在のパスワードが正しくありません")
+
+        new_hash = hash_password(body.new_password)
+        await db.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_hash, user_id))
+        await db.commit()
+        return {"message": "パスワードを変更しました"}
     finally:
         await db.close()

@@ -8,6 +8,7 @@ ChatGPT Plus ¥3,000は高いという層をターゲットに、プライバシ
 - **本番URL**: https://pik-tal.com
 - **ステータス**: デプロイ済み・稼働中
 - **決済**: 未有効化（Stripe/PayPal準備中のため「準備中」表示）
+- **SiteScan**: 停止中（LiteChatに移行済み）
 
 ## アーキテクチャ
 
@@ -18,6 +19,18 @@ ChatGPT Plus ¥3,000は高いという層をターゲットに、プライバシ
                                                       └── llama.cpp (Docker, port 8080)
                                                             └── Qwen 2.5 7B Q4_K_M
 ```
+
+## 技術スタック
+
+| レイヤー | 技術 |
+|---------|------|
+| フロントエンド | Next.js 15.1 (App Router), React 19, TypeScript 5.7 |
+| バックエンド | FastAPI 0.115.6, Python 3.12, Uvicorn |
+| データベース | SQLite (aiosqliteによる非同期アクセス) |
+| AI/LLM | llama.cpp (Qwen 2.5 7B Q4_K_M) + Claude Haiku（フォールバック） |
+| 決済 | Stripe（準備中） |
+| インフラ | Docker Compose, Nginx, Let's Encrypt, Vultr VPS |
+| DNS | Cloudflare (DNS only) |
 
 ## VPS情報
 - **LiteChat本番**: Vultr Tokyo 4vCPU/8GB RAM, IP: `45.77.24.224`
@@ -33,7 +46,7 @@ Project-04/
 ├── CLAUDE.md                          ← このファイル
 ├── claude-agents-company-design.md    ← Agents会社構想（v3.1）
 ├── local-llm-chat-design.md           ← LiteChat設計書（v2.0）
-├── litechat-app/                      ← ★メインプロジェクト
+├── litechat-app/                      ← メインプロジェクト
 │   ├── docker-compose.yml             ← backend + llama.cpp
 │   ├── backend/
 │   │   ├── Dockerfile
@@ -120,6 +133,28 @@ pm2 restart litechat-frontend
 curl http://localhost:8000/api/health
 ```
 
+### VPS上のディレクトリ構成
+```
+/root/
+├── project-04/          ← Gitリポジトリ（git pullはここ）
+├── litechat-app/        ← 実行用ディレクトリ（rsyncで同期）
+│   ├── backend/         ← FastAPI + .env
+│   ├── frontend/        ← Next.js
+│   ├── models/          ← Qwen 2.5 7B (4.4GB)
+│   └── docker-compose.yml
+└── deploy.sh            ← ワンクリックデプロイ
+```
+
+### サービス管理コマンド
+```bash
+docker ps                          # バックエンド + llama.cpp状態確認
+pm2 list                           # フロントエンド状態確認
+curl http://localhost:8000/api/health  # ヘルスチェック
+docker compose logs -f backend     # バックエンドログ
+docker compose logs -f llama       # LLMログ
+pm2 logs litechat-frontend         # フロントエンドログ
+```
+
 ## 別端末でのセットアップ
 
 ```bash
@@ -146,6 +181,41 @@ git add . && git commit -m "変更内容" && git push origin main
 ssh root@45.77.24.224 "/root/deploy.sh"
 ```
 
+## コーディング規約
+
+### Python（バックエンド）
+
+- **全て非同期**: データベース操作・HTTP通信は全て `async`/`await` を使用
+- **型ヒント**: Python 3.10+ のユニオン構文 (`str | None`、`Optional[str]` は使わない)
+- **命名規則**: 関数・変数は `snake_case`、定数は `UPPERCASE`
+- **import順序**: 標準ライブラリ → サードパーティ → ローカル (`from app.database import get_db`)
+- **Pydanticモデル**: 全リクエスト・レスポンススキーマに使用
+- **エラーハンドリング**: `HTTPException(status_code=..., detail="...")` でAPIエラーを返す
+- **SQL**: パラメータ化クエリ (`?` プレースホルダー)。文字列結合によるSQL構築は禁止
+- **タイムスタンプ**: UTC ISO文字列 `datetime.now(timezone.utc).isoformat()`
+
+### TypeScript/React（フロントエンド）
+
+- **`"use client"`**: React Hooksを使うコンポーネントに必須
+- **状態管理**: React Hooksのみ (useState, useEffect, useRef)。外部ライブラリ不使用
+- **データ取得**: ネイティブ `fetch` API。axios・SWR不使用
+- **ストリーミング**: SSEレスポンスには `ReadableStream` リーダーを使用
+- **環境変数**: `process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"` パターン
+- **ユーザーセッション**: `localStorage` に保存
+
+### API設計
+
+- **ルーターパターン**: `APIRouter(prefix="/api/...", tags=["..."])` を `main.py` でインクルード
+- **SSEストリーミング**: `StreamingResponse(generate(), media_type="text/event-stream")`
+- **CORS**: 開放設定 (`allow_origins=["*"]`)
+- **認証**: グローバルミドルウェアなし。エンドポイントごとにユーザーIDを検証
+
+### データベース
+
+- **SQLite** + `aiosqlite`（非同期ドライバ）
+- **スキーマ初期化**: `init_db()` 内の `CREATE TABLE IF NOT EXISTS` をlifespanで起動時に実行
+- **行アクセス**: `db.row_factory = aiosqlite.Row` で辞書ライクにアクセス
+
 ## .env必須変数（本番）
 ```
 LLAMA_SERVER_URL=http://llama:8080
@@ -163,7 +233,12 @@ MAX_TOKENS_PER_RESPONSE=1024
 - Qwen 2.5 7Bは中国語を混ぜる傾向あり → 全モードのsystem promptに「中国語使用禁止」を明記済み
 - 日付を聞くと2023年と答える → system promptに現在のJST日時を動的注入済み
 - モデルファイル(4.4GB)はgitignore済み、VPSでは `/root/litechat-app/models/` に配置
-- APIキーがチャット履歴に露出 → ローテーション推奨
+- `.env` ファイルは絶対にコミットしない — APIキー・Stripeキーを含む
+- SQLite DBファイル (`*.db`) はgitignore済み
+- llama.cppコンテナは6GB RAM必要
+- テストスイート未作成（pytest・Jest）
+- CI/CDパイプラインなし（SSH + Docker Composeによる手動デプロイ）
+- 日本語ファースト: UI、システムプロンプト、ユーザー向けメッセージは主に日本語
 
 ## 残タスク（優先度順）
 1. Stripe決済有効化（オンボーディング完了後、「準備中」ボタンを有効化）
