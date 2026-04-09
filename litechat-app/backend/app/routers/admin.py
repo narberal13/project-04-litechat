@@ -1,0 +1,88 @@
+"""Admin API — dashboard and management."""
+
+import hashlib
+import secrets
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, HTTPException, Depends
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from pydantic import BaseModel
+
+from app.database import get_db
+
+router = APIRouter(prefix="/api/admin", tags=["admin"])
+security = HTTPBasic()
+
+# Admin credentials (hashed)
+ADMIN_EMAIL = "gamma.narberal@gmail.com"
+ADMIN_PASSWORD_HASH = hashlib.sha256("LiteChat@Admin2026!".encode()).hexdigest()
+
+
+def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
+    pw_hash = hashlib.sha256(credentials.password.encode()).hexdigest()
+    if credentials.username != ADMIN_EMAIL or pw_hash != ADMIN_PASSWORD_HASH:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return credentials.username
+
+
+@router.get("/dashboard")
+async def dashboard(admin: str = Depends(verify_admin)):
+    db = await get_db()
+    try:
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        cursor = await db.execute("SELECT COUNT(*) as cnt FROM users")
+        total_users = (await cursor.fetchone())["cnt"]
+
+        cursor = await db.execute("SELECT COUNT(*) as cnt FROM users WHERE plan != 'free'")
+        paid_users = (await cursor.fetchone())["cnt"]
+
+        cursor = await db.execute(
+            "SELECT COUNT(*) as cnt FROM messages WHERE DATE(created_at) = ?", (today,)
+        )
+        messages_today = (await cursor.fetchone())["cnt"]
+
+        cursor = await db.execute("SELECT COUNT(*) as cnt FROM messages")
+        total_messages = (await cursor.fetchone())["cnt"]
+
+        cursor = await db.execute("SELECT COUNT(*) as cnt FROM chats")
+        total_chats = (await cursor.fetchone())["cnt"]
+
+        # Messages per day (last 7 days)
+        cursor = await db.execute("""
+            SELECT DATE(created_at) as date, COUNT(*) as cnt
+            FROM messages
+            GROUP BY DATE(created_at)
+            ORDER BY date DESC LIMIT 7
+        """)
+        daily_messages = [dict(r) for r in await cursor.fetchall()]
+
+        # Recent users
+        cursor = await db.execute(
+            "SELECT id, email, plan, messages_today, created_at FROM users ORDER BY created_at DESC LIMIT 20"
+        )
+        recent_users = [dict(r) for r in await cursor.fetchall()]
+
+        return {
+            "total_users": total_users,
+            "paid_users": paid_users,
+            "messages_today": messages_today,
+            "total_messages": total_messages,
+            "total_chats": total_chats,
+            "daily_messages": daily_messages,
+            "recent_users": recent_users,
+        }
+    finally:
+        await db.close()
+
+
+@router.get("/users")
+async def list_users(admin: str = Depends(verify_admin)):
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT id, email, plan, messages_today, created_at FROM users ORDER BY created_at DESC"
+        )
+        return [dict(r) for r in await cursor.fetchall()]
+    finally:
+        await db.close()
