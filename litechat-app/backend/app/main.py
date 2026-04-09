@@ -17,7 +17,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="LiteChat API",
-    description="月¥500のAIチャットサービス",
+    description="月¥300からのAIチャットサービス",
     version="0.1.0",
     lifespan=lifespan,
 )
